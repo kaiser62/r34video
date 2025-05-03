@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Rule34 Home</title>
+  <style>
+    body { background: black; color: white; font-family: sans-serif; margin: 0; padding: 1rem; }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+    .tag { background: #333; padding: 5px 10px; border-radius: 6px; text-decoration: none; color: white; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; }
+    .video-card { background: #111; padding: 10px; border-radius: 8px; text-align: center; }
+    .video-card img { width: 100%; border-radius: 6px; }
+    .video-card h3 { font-size: 14px; margin: 0.5rem 0; }
+    .video-card a.button { display: inline-block; padding: 6px 12px; background: #555; border-radius: 6px; text-decoration: none; color: white; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>📼 Latest Rule34 Videos</h1>
+
+  <div class="tag-list">
+    {% for tag in tags %}
+      <a class="tag" href="/search?q={{ tag }}">{{ tag }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="grid">
+    {% for video in videos %}
+      <div class="video-card">
+        <img src="{{ video.thumbnail }}" alt="{{ video.title }}">
+        <h3>{{ video.title }}</h3>
+        <p>{{ video.duration }} {{ video.is_hd }}</p>
+        <a class="button" href="/resolve?url={{ video.link }}">▶️ Play</a>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+</html>
