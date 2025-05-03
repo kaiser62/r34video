@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 def get_html(url: str) -> str:
     logging.debug(f"Fetching HTML from: {url}")
     try:
-        response = requests.get(url, headers=HEADERS, proxies=PROXIES)
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
         return response.text
@@ -190,7 +190,7 @@ def stream():
     if range_header:
         headers["Range"] = range_header
     try:
-        r = requests.get(video_url, headers=headers, stream=True, timeout=10, proxies=PROXIES)
+        r = requests.get(video_url, headers=headers, stream=True, timeout=10)
         response = Response(
             stream_with_context(r.iter_content(chunk_size=8192)),
             status=r.status_code,
