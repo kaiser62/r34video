@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Rule34 TikTok UI</title>
   <style>
@@ -13,29 +13,13 @@
       overflow: hidden;
     }
     .wrapper {
-      max-width: 100%; margin: 0 auto;
-      height: 100vh; display: flex; flex-direction: column;
-    }
-    .tag-bar {
+      height: 100vh;
       display: flex;
-      background: #111; padding: 10px;
-      justify-content: center;
-    }
-    .tag-bar select {
-      padding: 8px 16px;
-      background: #333;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      cursor: pointer;
-    }
-    .tag-bar select option {
-      background: #333;
-      color: white;
+      flex-direction: column;
     }
     .feed {
-      flex: 1; overflow-y: auto;
+      flex: 1;
+      overflow-y: auto;
       scroll-snap-type: y mandatory;
     }
     .slide {
@@ -46,17 +30,16 @@
       justify-content: center;
       align-items: center;
       position: relative;
-      padding-bottom: 160px; /* leave space for overlay and seekbar */
+      padding-bottom: 160px;
       background: black;
       box-sizing: border-box;
     }
-
     video {
       width: 100%;
-      max-height: 75vh; /* prevent it from pushing the overlay off-screen */
+      max-height: 75vh;
       object-fit: contain;
+      background: black;
     }
-
     .overlay {
       position: absolute;
       bottom: 0;
@@ -66,13 +49,9 @@
       background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
       z-index: 10;
       box-sizing: border-box;
-
       max-height: 30vh;
       overflow-y: auto;
     }
-
-
-
     .overlay h3 { margin: 0 0 5px; font-size: 1rem; }
     .overlay p { font-size: 0.85rem; opacity: 0.8; margin: 0 6px 6px 0; display: inline-block; }
     .video-tags {
@@ -96,241 +75,136 @@
       padding: 4px 8px;
       text-decoration: none;
     }
-    .loading-indicator {
-      color: #999;
-      text-align: center;
-      padding: 10px;
-    }
-
-    #searchBtn {
-      position: fixed; top: 10px; right: 15px;
-      z-index: 1000; font-size: 24px;
-      background: #444; color: white;
-      border-radius: 50%; padding: 8px;
-      cursor: pointer; border: none;
-    }
-
-    .search-dropdown {
-      position: fixed;
-      top: 60px;
-      right: 15px;
-      z-index: 999;
-      background: #222;
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-      width: 300px;
-      max-width: 90%;
-      display: none;
-    }
-    .search-dropdown.active {
-      display: block;
-    }
-    .search-dropdown input[type="text"] {
-      width: 100%;
-      padding: 8px 12px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 4px;
-      margin-bottom: 10px;
-      background: #333;
+    .play-button {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 60px;
       color: white;
+      opacity: 0.7;
+      cursor: pointer;
+      z-index: 20;
     }
-    .search-dropdown .popular-tags {
-      margin-top: 10px;
+    .play-button:hover {
+      opacity: 1;
     }
-    .search-dropdown .popular-tags p {
-      margin: 5px 0;
-      font-size: 0.85rem;
-      opacity: 0.8;
-    }
-
-    /* Overlay for closing search on click outside */
-    .click-outside-overlay {
+    #loadMoreContainer {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 998;
-      display: none;
+      bottom: 15px;
+      right: 15px;
+      z-index: 1000;
     }
-    .click-outside-overlay.active {
-      display: block;
+    #loadMoreBtn {
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      background: #222;
+      color: white;
+      border: 1px solid #555;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    @media (max-width: 768px) {
+      #loadMoreBtn {
+        font-size: 0.75rem;
+        padding: 5px 10px;
+      }
     }
   </style>
 </head>
-
 <body>
-
 <div class="wrapper">
-
-  <button id="searchBtn">🔍</button>
-
   <div class="feed" id="videoFeed">
-    {% if videos %}
-      {% for video in videos %}
-      <div class="slide" data-url="{{ video.link }}" data-loaded="false">
-        <video muted playsinline controls preload="none" poster="{{ video.thumbnail }}"></video>
-        <div class="overlay">
-          <h3>{{ video.title }}</h3>
-          <p>{{ video.duration }} {{ video.is_hd }}</p>
-
-          <!-- Display any tags we already have -->
-          {% if video.tags and video.tags|length > 0 %}
-          <div class="video-tags">
-            {% for tag in video.tags %}
-              <span onclick="window.location.href='/search?q={{ tag }}'">{{ tag }}</span>
-            {% endfor %}
-          </div>
-          {% endif %}
-
-          <select class="resolution-selector"><option>Loading...</option></select>
-          <a class="download-link" href="#" download>⬇ Download</a>
-          <a href="{{ video.link }}" target="_blank">🔗 Rule34</a>
+    {% for video in videos %}
+    <div class="slide" data-url="{{ video.link }}" data-loaded="false">
+      <video muted playsinline controls preload="none" poster="{{ video.thumbnail }}"></video>
+      <div class="play-button">▶</div>
+      <div class="overlay">
+        <h3>{{ video.title }}</h3>
+        <p>{{ video.duration }} {{ video.is_hd }}</p>
+        <div class="video-tags">
+          {% for tag in video.tags %}
+          <span onclick="window.location.href='/search?q={{ tag }}'">{{ tag }}</span>
+          {% endfor %}
         </div>
+        <select class="resolution-selector"><option>Loading...</option></select>
+        <a class="download-link" href="#" download>⬇ Download</a>
+        <a href="{{ video.link }}" target="_blank">🔗 Rule34</a>
       </div>
-      {% endfor %}
-    {% else %}
-      <div class="loading-indicator">No videos found</div>
-    {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div id="loadMoreContainer">
+    <button id="loadMoreBtn">Load More</button>
   </div>
 </div>
 
-<div class="click-outside-overlay" id="clickOutsideOverlay"></div>
-
-<div class="search-dropdown" id="searchDropdown">
-  <form action="/search" method="get" id="searchForm">
-    <input type="text" name="q" placeholder="Search tags..." id="searchInput">
-
-    {% if tags and tags|length > 0 %}
-    <div class="popular-tags">
-      <p>Popular Tags:</p>
-      <div class="video-tags">
-        {% for tag in tags[:15] %}
-          <span onclick="window.location.href='/search?q={{ tag }}'">{{ tag }}</span>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-  </form>
-</div>
-
 <script>
-const searchBtn = document.getElementById('searchBtn');
-const searchDropdown = document.getElementById('searchDropdown');
-const clickOutsideOverlay = document.getElementById('clickOutsideOverlay');
-const searchInput = document.getElementById('searchInput');
+let currentPage = {{ current_page | default(1) }};
+let isLoading = false;
 
-searchBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  toggleSearch();
-});
+document.querySelectorAll('.slide').forEach(setupSlide);
 
-function toggleSearch() {
-  const isActive = searchDropdown.classList.contains('active');
+function setupSlide(container) {
+  const video = container.querySelector('video');
+  const playBtn = container.querySelector('.play-button');
+  const selector = container.querySelector('.resolution-selector');
+  const dl = container.querySelector('.download-link');
+  const tagBox = container.querySelector('.video-tags');
 
-  if (isActive) {
-    searchDropdown.classList.remove('active');
-    clickOutsideOverlay.classList.remove('active');
-  } else {
-    searchDropdown.classList.add('active');
-    clickOutsideOverlay.classList.add('active');
-    searchInput.focus();
-  }
-}
+  playBtn?.addEventListener("click", async () => {
+    if (container.dataset.loaded === "true") return;
 
-// Close search when clicking outside
-clickOutsideOverlay.addEventListener('click', () => {
-  toggleSearch();
-});
+    try {
+      const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
+      const data = await res.json();
+      const streams = data.streams || {};
+      const tags = data.tags || [];
+      const title = data.title || "";
 
-// Prevent search dropdown clicks from closing
-searchDropdown.addEventListener('click', (e) => {
-  e.stopPropagation();
-});
+      if (title) container.querySelector("h3").textContent = title;
 
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(async (entry) => {
-    const container = entry.target;
-    const video = container.querySelector('video');
-    const selector = container.querySelector('.resolution-selector');
-    const tagsContainer = container.querySelector('.video-tags') || document.createElement('div');
-    const overlay = container.querySelector('.overlay');
-    const dl = container.querySelector('.download-link');
-
-    if (!tagsContainer.classList.contains('video-tags')) {
-      tagsContainer.className = 'video-tags';
-      // Insert after the duration paragraph
-      const durEl = container.querySelector('.overlay p');
-      if (durEl) {
-        durEl.after(tagsContainer);
-      } else {
-        overlay.insertBefore(tagsContainer, selector);
+      selector.innerHTML = "";
+      if (!Object.keys(streams).length) {
+        selector.innerHTML = "<option>No streams found</option>";
+        return;
       }
-    }
 
-    if (entry.isIntersecting && container.dataset.loaded === 'false') {
-      try {
-        const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
-        const data = await res.json();
-        const streams = data.streams;
-        const tags = data.tags || [];
-        const title = data.title || "";
+      for (const [label, url] of Object.entries(streams)) {
+        const opt = document.createElement("option");
+        opt.value = url;
+        opt.textContent = label;
+        selector.appendChild(opt);
+      }
 
-        // Update the title if we have a better one from the video page
-        if (title) {
-          const titleEl = container.querySelector('h3');
-          if (titleEl) {
-            titleEl.textContent = title;
-          }
-        }
+      const streamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
+      video.src = streamUrl;
+      dl.href = streamUrl;
 
-        selector.innerHTML = "";
-        if (Object.keys(streams).length === 0) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "No streams found";
-          selector.appendChild(opt);
-        } else {
-          for (const [label, url] of Object.entries(streams)) {
-            const opt = document.createElement("option");
-            opt.value = url;
-            opt.textContent = label;
-            selector.appendChild(opt);
-          }
-
-          const streamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
-          video.src = streamUrl;
-          dl.href = streamUrl;
-        }
-
-        // Update tags from the fetched data
-        // Update tags from the fetched data
-        tagsContainer.innerHTML = '';
+      // Tag rendering (dynamic on resolve)
+      if (tagBox && tags.length) {
+        tagBox.innerHTML = '';
         const maxVisible = 6;
+        let expanded = false;
         const showMoreBtn = document.createElement('button');
         showMoreBtn.textContent = 'Show more';
         showMoreBtn.style.marginTop = '6px';
 
-        let expanded = false;
-
-        function renderTags() {
-          tagsContainer.innerHTML = '';
-          const shownTags = expanded ? tags : tags.slice(0, maxVisible);
-
-          shownTags.forEach(tag => {
+        const renderTags = () => {
+          tagBox.innerHTML = '';
+          const shown = expanded ? tags : tags.slice(0, maxVisible);
+          shown.forEach(tag => {
             const span = document.createElement('span');
             span.textContent = tag;
             span.onclick = () => window.location.href = `/search?q=${encodeURIComponent(tag)}`;
-            tagsContainer.appendChild(span);
+            tagBox.appendChild(span);
           });
-
           if (tags.length > maxVisible) {
             showMoreBtn.textContent = expanded ? 'Show less' : 'Show more';
-            tagsContainer.appendChild(showMoreBtn);
+            tagBox.appendChild(showMoreBtn);
           }
-        }
+        };
 
         showMoreBtn.onclick = () => {
           expanded = !expanded;
@@ -338,32 +212,70 @@ const observer = new IntersectionObserver((entries) => {
         };
 
         renderTags();
-
-
-        selector.addEventListener('change', () => {
-          if (selector.value) {
-            const streamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
-            video.src = streamUrl;
-            dl.href = streamUrl;
-            video.play();
-          }
-        });
-
-        container.dataset.loaded = 'true';
-        if (video.src) {
-          video.play().catch(() => {});
-        }
-      } catch (error) {
-        console.error("Error loading video data:", error);
-        selector.innerHTML = "<option>Error loading</option>";
       }
-    } else if (!entry.isIntersecting) {
-      video.pause();
-    }
-  });
-}, { threshold: 0.75 });
 
-document.querySelectorAll('.slide').forEach(container => observer.observe(container));
+      container.dataset.loaded = "true";
+      playBtn.style.display = "none";
+      await video.play();
+    } catch (err) {
+      console.error("Error resolving stream:", err);
+      selector.innerHTML = "<option>Error loading</option>";
+    }
+  }, { once: true });
+}
+
+document.getElementById("loadMoreBtn").addEventListener("click", async () => {
+  if (isLoading) return;
+  isLoading = true;
+  currentPage++;
+
+  const btn = document.getElementById("loadMoreBtn");
+  btn.disabled = true;
+  btn.textContent = "Loading...";
+
+  try {
+    const res = await fetch(`/?page=${currentPage}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    });
+    const videos = await res.json();
+    if (!videos.length) {
+      btn.textContent = "No more videos";
+      return;
+    }
+
+    const feed = document.getElementById("videoFeed");
+    for (const video of videos) {
+      const div = document.createElement('div');
+      div.className = 'slide';
+      div.dataset.url = video.link;
+      div.dataset.loaded = 'false';
+      div.innerHTML = `
+        <video muted playsinline controls preload="none" poster="${video.thumbnail}"></video>
+        <div class="play-button">▶</div>
+        <div class="overlay">
+          <h3>${video.title}</h3>
+          <p>${video.duration} ${video.is_hd}</p>
+          <div class="video-tags">
+            ${(video.tags || []).map(tag => `<span onclick="window.location.href='/search?q=${encodeURIComponent(tag)}'">${tag}</span>`).join("")}
+          </div>
+          <select class="resolution-selector"><option>Loading...</option></select>
+          <a class="download-link" href="#" download>⬇ Download</a>
+          <a href="${video.link}" target="_blank">🔗 Rule34</a>
+        </div>`;
+      feed.appendChild(div);
+      setupSlide(div);
+    }
+
+    btn.disabled = false;
+    btn.textContent = "Load More";
+  } catch (e) {
+    console.error("Load more failed", e);
+    btn.textContent = "Retry";
+    btn.disabled = false;
+  } finally {
+    isLoading = false;
+  }
+});
 </script>
 </body>
 </html>

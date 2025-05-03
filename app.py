@@ -5,10 +5,23 @@ import logging
 import html
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, Future
+from threading import Lock, Thread
+import time
 
 app = Flask(__name__)
 BASE_URL = "https://rule34video.com"
-HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": BASE_URL}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/124.0.0.0 Safari/537.36",
+    "Referer": BASE_URL,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
 PROXIES = {
     "http": "http://192.168.1.140:8887",
     "https": "http://192.168.1.140:8887",
@@ -16,11 +29,21 @@ PROXIES = {
 
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 
+executor = ThreadPoolExecutor(max_workers=3)
+active_futures: dict[str, Future] = {}
+loaded_urls: set[str] = set()
+future_lock = Lock()
+
 
 def get_html(url: str) -> str:
     logging.debug(f"Fetching HTML from: {url}")
     try:
-        response = requests.get(url, headers=HEADERS)
+        session = requests.Session()
+        session.headers.update(HEADERS)
+        response = session.get(url, proxies=PROXIES, timeout=10)
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(response.text)
+
         response.raise_for_status()
         logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
         return response.text
@@ -30,16 +53,13 @@ def get_html(url: str) -> str:
 
 
 def extract_tags_from_video_html(page_html: str) -> list[str]:
-    """Extracts tags from the video detail page."""
     soup = BeautifulSoup(page_html, "html.parser")
     tag_elements = soup.select(".wrap .tag_item")
     return sorted({a.get_text(strip=True) for a in tag_elements})
 
 
 def extract_popular_tags(html_text: str) -> list[str]:
-    """Extract popular tags from the main page for filtering."""
     soup = BeautifulSoup(html_text, "html.parser")
-    # Try different selectors that might contain tag elements on the main page
     tag_elements = soup.select(".categories a") or soup.select(".tags a") or soup.select(".list a")
     return sorted({a.get_text(strip=True) for a in tag_elements if a.get_text(strip=True)})
 
@@ -47,35 +67,26 @@ def extract_popular_tags(html_text: str) -> list[str]:
 def extract_videos(html_text: str) -> list[dict]:
     logging.debug("Extracting videos from HTML...")
     soup = BeautifulSoup(html_text, "html.parser")
-    video_items = soup.select("div.item")  # or try 'div.video-item' if needed
-    logging.debug(f"Found {len(video_items)} video containers")
+    video_items = soup.select("div.item.thumb")
+
     videos = []
-
     for item in video_items:
-        a_tag = item.find("a", href=True)
-        img_tag = item.find("img", {"original": True})
+        link_tag = item.select_one('a.js-open-popup[href*="/video/"]')
+        if not link_tag:
+            continue  # skip non-video blocks
 
-        # Try to get title from title_video class first, then fall back to img title
-        title_el = item.select_one(".title_video")
-        title = title_el.text.strip() if title_el else (img_tag.get("title") if img_tag else "Untitled")
-        thumbnail = img_tag.get("original") if img_tag else ""
-
-        # Extract inline tags if available
-        tags_elements = item.find_all(class_="tag_item")
-        tag_item_list = [tag.get_text(strip=True) for tag in tags_elements]
-        logging.debug(f"Found {len(tag_item_list)} inline tags for this video")
-
-        href = a_tag["href"] if a_tag else ""
+        href = link_tag['href']
         full_link = urljoin(BASE_URL, href)
-        try:
-            parts = href.strip("/").split("/")
-            video_id = parts[-2] if len(parts) >= 2 else "unknown"
-        except Exception:
-            video_id = "unknown"
+        title = link_tag.get('title') or ""
+        video_id = href.strip("/").split("/")[-2]  # e.g. /video/3821357/title/ → 3821357
 
-        duration_el = item.select_one(".time")
-        duration = duration_el.text.strip() if duration_el else ""
-        is_hd = "HD" if "hd" in item.decode().lower() else ""
+        thumbnail_tag = item.select_one("img.thumb.lazy-load")
+        thumbnail = thumbnail_tag.get("data-original") if thumbnail_tag else ""
+
+        duration_tag = item.select_one(".time")
+        duration = duration_tag.text.strip() if duration_tag else ""
+
+        is_hd = "HD" if item.select_one(".quality") else ""
 
         videos.append({
             "id": video_id,
@@ -84,20 +95,21 @@ def extract_videos(html_text: str) -> list[dict]:
             "title": title.strip(),
             "is_hd": is_hd,
             "duration": duration,
-            "tags": tag_item_list,  # Add inline tags if available
+            "tags": [],
         })
 
     logging.debug(f"Returning {len(videos)} videos")
     return videos
 
 
+
+
+
+
 def extract_direct_stream_urls_from_html(page_html: str) -> dict:
     logging.debug("Extracting direct stream URLs from video page HTML...")
     soup = BeautifulSoup(page_html, "html.parser")
-
-    # Try multiple selectors to find stream links
     stream_links = soup.select(".wrap a.tag_item") or soup.select("a[href*='.mp4']")
-
     urls = {}
     for a in stream_links:
         href = a.get("href")
@@ -105,7 +117,6 @@ def extract_direct_stream_urls_from_html(page_html: str) -> dict:
         if href and "mp4" in href.lower():
             urls[label or f"Quality {len(urls) + 1}"] = html.unescape(href)
 
-    # If no direct links found, try to find them in script tags
     if not urls:
         scripts = soup.find_all("script")
         for script in scripts:
@@ -122,12 +133,17 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
     logging.debug(f"Resolving all video URLs and tags from page: {video_page_url}")
     try:
         html_page = get_html(video_page_url)
-        urls = extract_direct_stream_urls_from_html(html_page)
-        tags = extract_tags_from_video_html(html_page)
-
-        # Extract the correct title from the video page
         soup = BeautifulSoup(html_page, "html.parser")
-        title_element = soup.select_one(".title_video") or soup.select_one("h1.title") or soup.select_one("h1")
+
+        # Extract stream URLs
+        urls = extract_direct_stream_urls_from_html(html_page)
+
+        # Extract tags
+        tag_elements = soup.select(".tag_item")
+        tags = sorted({tag.get_text(strip=True) for tag in tag_elements})
+
+        # Extract title
+        title_element = soup.select_one(".title_video, h1.title, h1")
         title = title_element.text.strip() if title_element else ""
 
         return {
@@ -140,44 +156,77 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
         return {"streams": {}, "tags": [], "title": ""}
 
 
+def threaded_resolve(video_page_url: str) -> dict:
+    with future_lock:
+        if video_page_url in loaded_urls:
+            logging.info(f"[SKIP] Already loaded: {video_page_url}")
+            return {"streams": {}, "tags": [], "title": ""}
+
+        if len(active_futures) >= 3:
+            oldest_url = next(iter(active_futures))
+            logging.debug(f"[THREAD] Killing oldest thread: {oldest_url}")
+            active_futures[oldest_url].cancel()
+            del active_futures[oldest_url]
+
+        future = executor.submit(resolve_all_video_urls, video_page_url)
+        active_futures[video_page_url] = future
+        loaded_urls.add(video_page_url)
+
+    try:
+        return future.result(timeout=15)
+    except Exception as e:
+        logging.error(f"[THREAD ERROR] {e}")
+        return {"streams": {}, "tags": [], "title": ""}
+
+
+def background_cleaner(interval: int = 600):
+    while True:
+        time.sleep(interval)
+        with future_lock:
+            completed = [url for url, f in active_futures.items() if f.done() or f.cancelled()]
+            for url in completed:
+                logging.debug(f"[CLEANUP] Removing completed thread: {url}")
+                del active_futures[url]
+            if len(loaded_urls) > 500:
+                logging.debug("[CLEANUP] Resetting loaded_urls set")
+                loaded_urls.clear()
+
+
 @app.route("/")
 def index():
-    html_text = get_html(f"{BASE_URL}/latest-updates/")
-    # Extract popular tags for filtering instead of video page tags
+    page = request.args.get("page", "1")
+    html_text = get_html(f"{BASE_URL}/latest-updates/{page}/")
     all_tags = extract_popular_tags(html_text)
     videos = extract_videos(html_text)
-    logging.debug(f"[INDEX] Loaded {len(videos)} videos and {len(all_tags)} tags")
+
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify(videos)
-    return render_template("index.html", videos=videos, tags=all_tags)
+
+    return render_template("index.html", videos=videos, tags=all_tags, current_page=int(page))
 
 
 @app.route("/search")
 def search():
     query = request.args.get("q", "").strip()
+    page = request.args.get("page", "01")
     if not query:
         return "Missing query", 400
-
     formatted_query = query.replace(" ", "-")
-    search_url = f"{BASE_URL}/search/{formatted_query}"
+    search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
     html_text = get_html(search_url)
     videos = extract_videos(html_text)
-    # Extract popular tags for filtering from search results page
     all_tags = extract_popular_tags(html_text)
-
-    logging.debug(f"[SEARCH] Query='{query}' → {len(videos)} videos, {len(all_tags)} tags")
-
+    logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos")
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify(videos)
-
-    return render_template("search.html", videos=videos, query=query, tags=all_tags)
+    return render_template("search.html", videos=videos, query=query, tags=all_tags, current_page=page)
 
 
 @app.route("/resolve")
 def resolve():
     video_url = request.args.get("url")
-    logging.debug(f"Resolving via AJAX: {video_url}")
-    result = resolve_all_video_urls(video_url)
+    logging.debug(f"[THREAD-RESOLVE] {video_url}")
+    result = threaded_resolve(video_url)
     return jsonify(result)
 
 
@@ -190,7 +239,7 @@ def stream():
     if range_header:
         headers["Range"] = range_header
     try:
-        r = requests.get(video_url, headers=headers, stream=True, timeout=10)
+        r = requests.get(video_url, headers=headers, stream=True, timeout=10, proxies=PROXIES)
         response = Response(
             stream_with_context(r.iter_content(chunk_size=8192)),
             status=r.status_code,
@@ -206,4 +255,5 @@ def stream():
 
 
 if __name__ == '__main__':
+    Thread(target=background_cleaner, daemon=True).start()
     app.run(host='0.0.0.0', port=5001, debug=True)
