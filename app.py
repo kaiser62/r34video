@@ -40,7 +40,7 @@ def get_html(url: str) -> str:
     try:
         session = requests.Session()
         session.headers.update(HEADERS)
-        response = session.get(url, proxies=PROXIES, timeout=10)
+        response = session.get(url, timeout=10)
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(response.text)
 
@@ -239,7 +239,7 @@ def stream():
     if range_header:
         headers["Range"] = range_header
     try:
-        r = requests.get(video_url, headers=headers, stream=True, timeout=10, proxies=PROXIES)
+        r = requests.get(video_url, headers=headers, stream=True, timeout=10)
         response = Response(
             stream_with_context(r.iter_content(chunk_size=8192)),
             status=r.status_code,
