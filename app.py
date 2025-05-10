@@ -39,7 +39,7 @@ def get_html(url: str) -> str:
     try:
         session = requests.Session()
         session.headers.update(HEADERS)
-        response = session.get(url, proxies=PROXIES, timeout=10)
+        response = session.get(url, timeout=10)
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(response.text)
 
@@ -223,23 +223,42 @@ def resolve():
 
 
 @app.route("/stream")
+@app.route("/stream")
 def stream():
     video_url = request.args.get("url")
     video_url = html.unescape(video_url)
     headers = dict(HEADERS)
     range_header = request.headers.get("Range")
+
     if range_header:
         headers["Range"] = range_header
+
     try:
-        r = requests.get(video_url, headers=headers, stream=True, timeout=10, proxies=PROXIES)
+        r = requests.get(video_url, headers=headers, stream=True, timeout=10)
+
+        # Ensure we have the right content type
+        content_type = r.headers.get("Content-Type", "video/mp4")
+
         response = Response(
-            stream_with_context(r.iter_content(chunk_size=8192)),
+            stream_with_context(r.iter_content(chunk_size=16384)),  # Larger chunk size
             status=r.status_code,
-            content_type=r.headers.get("Content-Type", "video/mp4")
+            content_type=content_type
         )
-        response.headers["Content-Range"] = r.headers.get("Content-Range", "")
-        response.headers["Accept-Ranges"] = "bytes"
-        response.headers["Content-Length"] = r.headers.get("Content-Length", "")
+
+        # Copy all important headers
+        for header in ["Content-Range", "Accept-Ranges", "Content-Length", "Cache-Control"]:
+            if header in r.headers:
+                response.headers[header] = r.headers[header]
+
+        # Ensure these headers are set even if not in original response
+        if "Accept-Ranges" not in r.headers:
+            response.headers["Accept-Ranges"] = "bytes"
+
+        # Add CORS headers
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Range, Origin, X-Requested-With"
+
         return response
     except Exception as e:
         logging.error(f"Stream failed: {e}")
