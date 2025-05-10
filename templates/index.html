@@ -116,8 +116,8 @@
 <div class="wrapper">
   <div class="feed" id="videoFeed">
     {% for video in videos %}
-    <div class="slide" data-url="{{ video.link }}" data-loaded="false">
-      <video muted playsinline controls preload="none" poster="{{ video.thumbnail }}"></video>
+    <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false">
+      <video muted playsinline preload="metadata" poster="{{ video.thumbnail }}"></video>
       <div class="play-button">▶</div>
       <div class="overlay">
         <h3>{{ video.title }}</h3>
@@ -153,8 +153,10 @@ function setupSlide(container) {
   const dl = container.querySelector('.download-link');
   const tagBox = container.querySelector('.video-tags');
 
-  playBtn?.addEventListener("click", async () => {
-    if (container.dataset.loaded === "true") return;
+  if (!playBtn || container.dataset.resolved === "true") return;
+
+  playBtn.addEventListener("click", async () => {
+    if (container.dataset.resolved === "true") return;
 
     try {
       const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
@@ -181,8 +183,9 @@ function setupSlide(container) {
       const streamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
       video.src = streamUrl;
       dl.href = streamUrl;
+      video.setAttribute("controls", "controls");
 
-      // Tag rendering (dynamic on resolve)
+      // Tag rendering
       if (tagBox && tags.length) {
         tagBox.innerHTML = '';
         const maxVisible = 6;
@@ -215,7 +218,8 @@ function setupSlide(container) {
       }
 
       container.dataset.loaded = "true";
-      playBtn.style.display = "none";
+      container.dataset.resolved = "true";
+      playBtn.remove();
       await video.play();
     } catch (err) {
       console.error("Error resolving stream:", err);
@@ -249,8 +253,9 @@ document.getElementById("loadMoreBtn").addEventListener("click", async () => {
       div.className = 'slide';
       div.dataset.url = video.link;
       div.dataset.loaded = 'false';
+      div.dataset.resolved = 'false';
       div.innerHTML = `
-        <video muted playsinline controls preload="none" poster="${video.thumbnail}"></video>
+        <video muted playsinline preload="metadata" poster="${video.thumbnail}"></video>
         <div class="play-button">▶</div>
         <div class="overlay">
           <h3>${video.title}</h3>

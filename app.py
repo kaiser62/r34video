@@ -31,7 +31,6 @@ logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 
 executor = ThreadPoolExecutor(max_workers=3)
 active_futures: dict[str, Future] = {}
-loaded_urls: set[str] = set()
 future_lock = Lock()
 
 
@@ -40,7 +39,7 @@ def get_html(url: str) -> str:
     try:
         session = requests.Session()
         session.headers.update(HEADERS)
-        response = session.get(url, timeout=10)
+        response = session.get(url, proxies=PROXIES, timeout=10)
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(response.text)
 
@@ -158,9 +157,6 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
 
 def threaded_resolve(video_page_url: str) -> dict:
     with future_lock:
-        if video_page_url in loaded_urls:
-            logging.info(f"[SKIP] Already loaded: {video_page_url}")
-            return {"streams": {}, "tags": [], "title": ""}
 
         if len(active_futures) >= 3:
             oldest_url = next(iter(active_futures))
@@ -170,7 +166,6 @@ def threaded_resolve(video_page_url: str) -> dict:
 
         future = executor.submit(resolve_all_video_urls, video_page_url)
         active_futures[video_page_url] = future
-        loaded_urls.add(video_page_url)
 
     try:
         return future.result(timeout=15)
@@ -187,9 +182,6 @@ def background_cleaner(interval: int = 600):
             for url in completed:
                 logging.debug(f"[CLEANUP] Removing completed thread: {url}")
                 del active_futures[url]
-            if len(loaded_urls) > 500:
-                logging.debug("[CLEANUP] Resetting loaded_urls set")
-                loaded_urls.clear()
 
 
 @app.route("/")
@@ -239,7 +231,7 @@ def stream():
     if range_header:
         headers["Range"] = range_header
     try:
-        r = requests.get(video_url, headers=headers, stream=True, timeout=10)
+        r = requests.get(video_url, headers=headers, stream=True, timeout=10, proxies=PROXIES)
         response = Response(
             stream_with_context(r.iter_content(chunk_size=8192)),
             status=r.status_code,
