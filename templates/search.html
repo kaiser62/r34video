@@ -7,21 +7,27 @@
   <style>
     html, body {
       margin: 0; padding: 0;
-      background: #000; color: #fff;
-      font-family: sans-serif;
+      background: #121212; /* Darker background for better contrast */
+      color: #f5f5f5; /* Softer white for better readability */
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; /* Modern font stack */
       height: 100%;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased; /* Smoother text rendering */
     }
+
     .wrapper {
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
+
     .feed {
       flex: 1;
       overflow-y: auto;
       scroll-snap-type: y mandatory;
+      scroll-behavior: smooth; /* Smooth scrolling between slides */
     }
+
     .slide {
       scroll-snap-align: start;
       height: 100svh;
@@ -31,95 +37,318 @@
       align-items: center;
       position: relative;
       padding-bottom: 160px;
-      background: black;
+      background: #121212;
       box-sizing: border-box;
     }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      max-height: 75vh;
+      display: flex;
+      justify-content: center;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
     video {
       width: 100%;
       max-height: 75vh;
       object-fit: contain;
-      background: black;
+      background: #000;
+      border-radius: 8px; /* Slightly rounded corners for videos */
     }
+
     .overlay {
       position: absolute;
       bottom: 0;
       left: 0;
       width: 100%;
-      padding: 1rem;
-      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      padding: 1.25rem;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.7) 40%, transparent);
       z-index: 10;
       box-sizing: border-box;
-      max-height: 30vh;
+      max-height: 40vh; /* Increased for better mobile viewing */
       overflow-y: auto;
+      backdrop-filter: blur(5px); /* Subtle blur effect */
+      -webkit-backdrop-filter: blur(5px);
     }
-    .overlay h3 { margin: 0 0 5px; font-size: 1rem; }
-    .overlay p { font-size: 0.85rem; opacity: 0.8; margin: 0 6px 6px 0; display: inline-block; }
+
+    .overlay h3 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .overlay p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin: 0 8px 8px 0;
+      display: inline-block;
+      font-weight: 500;
+    }
+
     .video-tags {
-      margin: 5px 0;
+      margin: 10px 0;
       display: flex;
       flex-wrap: wrap;
+      gap: 6px; /* Even spacing between tags */
     }
+
     .video-tags span {
-      font-size: 0.75rem;
-      background: #333;
-      margin-right: 5px;
-      margin-bottom: 5px;
-      padding: 3px 6px;
-      border-radius: 4px;
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 5px 10px;
+      border-radius: 16px; /* Pill-shaped tags */
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+      font-weight: 500;
+    }
+
+    .video-tags span:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .overlay select, .overlay a, .overlay button {
+      font-size: 0.9rem;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      font-weight: 500;
       cursor: pointer;
     }
-    .overlay select, .overlay a, .overlay button {
-      font-size: 0.8rem; margin: 4px 6px 0 0;
-      background: #222; color: white;
-      border: none; border-radius: 4px;
-      padding: 4px 8px;
-      text-decoration: none;
+
+    .overlay select:hover, .overlay a:hover, .overlay button:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
     }
+
     .play-button {
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      font-size: 60px;
-      color: white;
-      opacity: 0.7;
+      width: 80px;
+      height: 80px;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
       z-index: 20;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      border: 2px solid rgba(255, 255, 255, 0.5);
     }
+
+    .play-button::after {
+      content: "▶";
+      font-size: 32px;
+      margin-left: 5px; /* Adjust for visual centering */
+      color: white;
+    }
+
     .play-button:hover {
-      opacity: 1;
+      background: rgba(255, 255, 255, 0.25);
+      transform: translate(-50%, -50%) scale(1.1);
+      border-color: rgba(255, 255, 255, 0.8);
     }
+
+    .below-play-button {
+      margin-top: 12px;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      z-index: 15;
+    }
+
+    .below-play-button:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+    }
+
     #loadMoreContainer {
       position: fixed;
-      bottom: 15px;
-      right: 15px;
+      bottom: 20px;
+      right: 20px;
       z-index: 1000;
     }
+
     #loadMoreBtn {
-      padding: 6px 12px;
-      font-size: 0.8rem;
-      background: #222;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      background: rgba(255, 255, 255, 0.15);
       color: white;
-      border: 1px solid #555;
-      border-radius: 6px;
+      border: none;
+      border-radius: 24px;
       cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
+
+    #loadMoreBtn:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+    }
+
+    #loadMoreBtn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Mobile optimizations */
     @media (max-width: 768px) {
-      #loadMoreBtn {
+      .overlay {
+        padding: 1rem;
+      }
+
+      .overlay h3 {
+        font-size: 1rem;
+      }
+
+      .video-tags span {
         font-size: 0.75rem;
-        padding: 5px 10px;
+        padding: 4px 8px;
+      }
+
+      .overlay select, .overlay a, .overlay button {
+        font-size: 0.85rem;
+        padding: 6px 10px;
+      }
+
+      .play-button {
+        width: 60px;
+        height: 60px;
+      }
+
+      .play-button::after {
+        font-size: 24px;
+      }
+
+      #loadMoreBtn {
+        padding: 8px 16px;
+        font-size: 0.85rem;
       }
     }
+
+    /* For very small screens */
+    @media (max-width: 380px) {
+      .overlay h3 {
+        font-size: 0.9rem;
+      }
+
+      .overlay p {
+        font-size: 0.8rem;
+      }
+
+      .video-tags span {
+        font-size: 0.7rem;
+        padding: 3px 7px;
+      }
+    }
+
+    /* Add smooth scrollbar for supported browsers */
+    .feed {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    }
+
+    .feed::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .feed::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .feed::-webkit-scrollbar-thumb {
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+    }
+
+    /* Loading animations */
+    .loader {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loader-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: white;
+      margin: 0 3px;
+      animation: dot-pulse 1.5s infinite ease-in-out;
+    }
+
+    .loader-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .loader-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes dot-pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.6; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+
+    .video-error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      background: rgba(0,0,0,0.7);
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-align: center;
+    }
   </style>
-    🔍 Results for: {{ query }}
+     🔍 Results for: {{ query }}
 </head>
 <body>
 <div class="wrapper">
   <div class="feed" id="videoFeed">
     {% for video in videos %}
     <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false">
-      <video muted playsinline preload="metadata" poster="{{ video.thumbnail }}"></video>
-      <div class="play-button">▶</div>
+      <div class="video-container">
+        <video muted playsinline preload="none" poster="{{ video.thumbnail }}"></video>
+        <div class="play-button"></div>
+      </div>
+      <button class="below-play-button">Play Video</button>
       <div class="overlay">
         <h3>{{ video.title }}</h3>
         <p>{{ video.duration }} {{ video.is_hd }}</p>
@@ -128,9 +357,11 @@
           <span onclick="window.location.href='/search?q={{ tag }}'">{{ tag }}</span>
           {% endfor %}
         </div>
-        <select class="resolution-selector"><option>Loading...</option></select>
-        <a class="download-link" href="#" download>⬇ Download</a>
-        <a href="{{ video.link }}" target="_blank">🔗 Rule34</a>
+        <div class="controls-row">
+          <select class="resolution-selector"><option>Loading...</option></select>
+          <a class="download-link" href="#" download>⬇ Download</a>
+          <a href="{{ video.link }}" target="_blank">🔗 Source</a>
+        </div>
       </div>
     </div>
     {% endfor %}
@@ -144,20 +375,57 @@
 <script>
 let currentPage = {{ current_page | default(1) }};
 let isLoading = false;
+let observer;
+
+// Set up intersection observer for visibility tracking only
+if ('IntersectionObserver' in window) {
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      // Only track visibility, don't auto-play
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      } else {
+        entry.target.classList.remove('visible');
+      }
+    });
+  }, {
+    root: null,
+    rootMargin: '0px',
+    threshold: 0.5
+  });
+}
 
 document.querySelectorAll('.slide').forEach(setupSlide);
 
 function setupSlide(container) {
   const video = container.querySelector('video');
   const playBtn = container.querySelector('.play-button');
+  const belowPlayBtn = container.querySelector('.below-play-button');
   const selector = container.querySelector('.resolution-selector');
   const dl = container.querySelector('.download-link');
   const tagBox = container.querySelector('.video-tags');
 
-  if (!playBtn || container.dataset.resolved === "true") return;
+  if (container.dataset.resolved === "true") return;
 
-  playBtn.addEventListener("click", async () => {
+  // Add to intersection observer for visibility tracking only
+  if (observer) {
+    observer.observe(container);
+  }
+
+  // Function to handle play button click
+  const handlePlayClick = async () => {
     if (container.dataset.resolved === "true") return;
+
+    // Add loading indicators
+    if (playBtn) {
+      playBtn.style.opacity = "0.5";
+      playBtn.innerHTML = '<div class="loader"></div>';
+    }
+
+    if (belowPlayBtn) {
+      belowPlayBtn.disabled = true;
+      belowPlayBtn.innerHTML = '<div class="loader"></div>';
+    }
 
     try {
       const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
@@ -171,6 +439,8 @@ function setupSlide(container) {
       selector.innerHTML = "";
       if (!Object.keys(streams).length) {
         selector.innerHTML = "<option>No streams found</option>";
+        if (playBtn) playBtn.innerHTML = "❌";
+        if (belowPlayBtn) belowPlayBtn.textContent = "No Video";
         return;
       }
 
@@ -181,19 +451,65 @@ function setupSlide(container) {
         selector.appendChild(opt);
       }
 
+      // Important: Add error handling for video loading
+      video.onerror = function() {
+        console.error("Video error:", video.error);
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'video-error';
+        errorMsg.textContent = 'Error loading video. Try another quality.';
+        container.querySelector('.video-container').appendChild(errorMsg);
+      };
+
+      // Fix streaming issues by adding proper event listeners
+      video.addEventListener('canplay', function() {
+        if (playBtn) playBtn.remove();
+        if (belowPlayBtn) belowPlayBtn.remove();
+
+        // Remove any error messages
+        const errorMsg = container.querySelector('.video-error');
+        if (errorMsg) errorMsg.remove();
+
+        container.dataset.loaded = "true";
+        container.dataset.resolved = "true";
+      });
+
+      // Set the source and try to play
       const streamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
       video.src = streamUrl;
       dl.href = streamUrl;
       video.setAttribute("controls", "controls");
 
-      // Tag rendering
+      // Try to play the video
+      try {
+        const playPromise = video.play();
+
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.log("Auto-play prevented:", error);
+            // Show play button again if auto-play is blocked
+            if (playBtn) {
+              playBtn.innerHTML = "▶";
+              playBtn.style.opacity = "1";
+            }
+            if (belowPlayBtn) {
+              belowPlayBtn.disabled = false;
+              belowPlayBtn.textContent = "Play Video";
+            }
+          });
+        }
+      } catch (playError) {
+        console.error("Play error:", playError);
+      }
+
+      // Tag rendering with improved UI
       if (tagBox && tags.length) {
         tagBox.innerHTML = '';
-        const maxVisible = 6;
+        const maxVisible = window.innerWidth < 768 ? 4 : 6; // Fewer tags on mobile
         let expanded = false;
         const showMoreBtn = document.createElement('button');
-        showMoreBtn.textContent = 'Show more';
-        showMoreBtn.style.marginTop = '6px';
+        showMoreBtn.textContent = `+${tags.length - maxVisible} more`;
+        showMoreBtn.style.fontSize = '0.75rem';
+        showMoreBtn.style.padding = '4px 8px';
 
         const renderTags = () => {
           tagBox.innerHTML = '';
@@ -205,12 +521,13 @@ function setupSlide(container) {
             tagBox.appendChild(span);
           });
           if (tags.length > maxVisible) {
-            showMoreBtn.textContent = expanded ? 'Show less' : 'Show more';
+            showMoreBtn.textContent = expanded ? 'Show less' : `+${tags.length - maxVisible} more`;
             tagBox.appendChild(showMoreBtn);
           }
         };
 
-        showMoreBtn.onclick = () => {
+        showMoreBtn.onclick = (e) => {
+          e.preventDefault();
           expanded = !expanded;
           renderTags();
         };
@@ -218,16 +535,67 @@ function setupSlide(container) {
         renderTags();
       }
 
-      container.dataset.loaded = "true";
-      container.dataset.resolved = "true";
-      playBtn.remove();
-      await video.play();
+      // Add event listeners for video controls
+      selector.addEventListener('change', () => {
+        const newStreamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
+        const currentTime = video.currentTime;
+        video.src = newStreamUrl;
+        dl.href = newStreamUrl;
+        video.currentTime = currentTime;
+        video.play();
+      });
+
     } catch (err) {
       console.error("Error resolving stream:", err);
       selector.innerHTML = "<option>Error loading</option>";
+      if (playBtn) {
+        playBtn.innerHTML = "⚠️";
+        playBtn.style.opacity = "1";
+      }
+      if (belowPlayBtn) {
+        belowPlayBtn.disabled = false;
+        belowPlayBtn.textContent = "Retry";
+      }
     }
-  }, { once: true });
+  };
+
+  // Add click event to both play buttons
+  if (playBtn) {
+    playBtn.addEventListener("click", handlePlayClick);
+  }
+
+  if (belowPlayBtn) {
+    belowPlayBtn.addEventListener("click", handlePlayClick);
+  }
 }
+
+// Add touch swipe detection for mobile
+let touchStartY = 0;
+document.addEventListener('touchstart', (e) => {
+  touchStartY = e.touches[0].clientY;
+}, {passive: true});
+
+document.addEventListener('touchend', (e) => {
+  const touchEndY = e.changedTouches[0].clientY;
+  const diff = touchStartY - touchEndY;
+
+  // If significant vertical swipe
+  if (Math.abs(diff) > 50) {
+    const feed = document.getElementById("videoFeed");
+    const slides = Array.from(feed.querySelectorAll('.slide'));
+    const currentSlideIndex = slides.findIndex(slide => {
+      const rect = slide.getBoundingClientRect();
+      return rect.top <= 10 && rect.bottom >= 10;
+    });
+
+    if (currentSlideIndex !== -1) {
+      const targetIndex = diff > 0 ? currentSlideIndex + 1 : currentSlideIndex - 1;
+      if (targetIndex >= 0 && targetIndex < slides.length) {
+        slides[targetIndex].scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }
+}, {passive: true});
 
 document.getElementById("loadMoreBtn").addEventListener("click", async () => {
   if (isLoading) return;
@@ -236,13 +604,14 @@ document.getElementById("loadMoreBtn").addEventListener("click", async () => {
 
   const btn = document.getElementById("loadMoreBtn");
   btn.disabled = true;
-  btn.textContent = "Loading...";
+  btn.innerHTML = '<span class="loader-dot"></span><span class="loader-dot"></span><span class="loader-dot"></span>';
 
   try {
     const res = await fetch(`/?page=${currentPage}`, {
       headers: { "X-Requested-With": "XMLHttpRequest" }
     });
     const videos = await res.json();
+
     if (!videos.length) {
       btn.textContent = "No more videos";
       return;
@@ -256,21 +625,44 @@ document.getElementById("loadMoreBtn").addEventListener("click", async () => {
       div.dataset.loaded = 'false';
       div.dataset.resolved = 'false';
       div.innerHTML = `
-        <video muted playsinline preload="metadata" poster="${video.thumbnail}"></video>
-        <div class="play-button">▶</div>
+        <div class="video-container">
+          <video muted playsinline preload="none" poster="${video.thumbnail}"></video>
+          <div class="play-button"></div>
+        </div>
+        <button class="below-play-button">Play Video</button>
         <div class="overlay">
           <h3>${video.title}</h3>
           <p>${video.duration} ${video.is_hd}</p>
           <div class="video-tags">
             ${(video.tags || []).map(tag => `<span onclick="window.location.href='/search?q=${encodeURIComponent(tag)}'">${tag}</span>`).join("")}
           </div>
-          <select class="resolution-selector"><option>Loading...</option></select>
-          <a class="download-link" href="#" download>⬇ Download</a>
-          <a href="${video.link}" target="_blank">🔗 Rule34</a>
+          <div class="controls-row">
+            <select class="resolution-selector"><option>Loading...</option></select>
+            <a class="download-link" href="#" download>⬇ Download</a>
+            <a href="${video.link}" target="_blank">🔗 Source</a>
+          </div>
         </div>`;
       feed.appendChild(div);
       setupSlide(div);
+
+      // Add to intersection observer
+      if (observer) {
+        observer.observe(div);
+      }
     }
+
+    // Add a subtle animation to new slides
+    const newSlides = feed.querySelectorAll('.slide:nth-last-child(-n+' + videos.length + ')');
+    newSlides.forEach((slide, index) => {
+      slide.style.opacity = "0";
+      slide.style.transform = "translateY(20px)";
+      slide.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+
+      setTimeout(() => {
+        slide.style.opacity = "1";
+        slide.style.transform = "translateY(0)";
+      }, index * 100);
+    });
 
     btn.disabled = false;
     btn.textContent = "Load More";
@@ -281,6 +673,23 @@ document.getElementById("loadMoreBtn").addEventListener("click", async () => {
   } finally {
     isLoading = false;
   }
+});
+
+// Error handling for debugging blank page issues
+window.addEventListener('error', function(e) {
+  console.log('Global error handler', e);
+  document.body.innerHTML = '<div style="color:red; padding: 20px;">Error loading page: ' + e.message + '</div>';
+});
+
+// Add fallback content
+document.addEventListener('DOMContentLoaded', () => {
+  // Check if content is actually rendering
+  if (document.querySelectorAll('.slide').length === 0) {
+    document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
+  }
+
+  // Log data for debugging
+  console.log('Slides found:', document.querySelectorAll('.slide').length);
 });
 </script>
 </body>
