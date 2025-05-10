@@ -342,7 +342,7 @@
 <div class="wrapper">
   <div class="feed" id="videoFeed">
     {% for video in videos %}
-    <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false">
+    <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false" data-tags-loaded="false">
       <div class="video-container">
         <video muted playsinline preload="none" poster="{{ video.thumbnail }}"></video>
         <div class="play-button"></div>
@@ -376,13 +376,54 @@ let currentPage = {{ current_page | default(1) }};
 let isLoading = false;
 let observer;
 
-// Set up intersection observer for visibility tracking only
+// Function to preload tags without loading video
+function preloadTags(container) {
+  // Skip if already loaded
+  if (container.dataset.tagsLoaded === "true") return;
+
+  const tagBox = container.querySelector('.video-tags');
+  const videoUrl = container.dataset.url;
+
+  // Show loading indicator for tags
+  if (tagBox) {
+    tagBox.innerHTML = '<span style="opacity: 0.7;">Loading tags...</span>';
+  }
+
+  // Fetch video details but don't load the video itself
+  fetch(`/resolve?url=${encodeURIComponent(videoUrl)}`)
+    .then(res => res.json())
+    .then(data => {
+      const tags = data.tags || [];
+      const title = data.title || "";
+
+      // Update title
+      if (title) container.querySelector("h3").textContent = title;
+
+      // Update tags
+      if (tagBox && tags.length) {
+        renderTags(tagBox, tags);
+      } else if (tagBox) {
+        tagBox.innerHTML = '<span style="opacity: 0.7;">No tags available</span>';
+      }
+
+      container.dataset.tagsLoaded = "true";
+    })
+    .catch(err => {
+      console.error("Error loading tags:", err);
+      if (tagBox) tagBox.innerHTML = '<span style="opacity: 0.7;">Error loading tags</span>';
+    });
+}
+
+// Set up intersection observer for visibility tracking and tag preloading
 if ('IntersectionObserver' in window) {
   observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      // Only track visibility, don't auto-play
       if (entry.isIntersecting) {
         entry.target.classList.add('visible');
+        // Preload tags when slide becomes visible
+        if (entry.target.dataset.tagsLoaded !== "true") {
+          preloadTags(entry.target);
+        }
       } else {
         entry.target.classList.remove('visible');
       }
@@ -394,6 +435,40 @@ if ('IntersectionObserver' in window) {
   });
 }
 
+// Function to render tags
+function renderTags(tagBox, tags) {
+  tagBox.innerHTML = '';
+  const maxVisible = window.innerWidth < 768 ? 4 : 6;
+  let expanded = false;
+  const showMoreBtn = document.createElement('button');
+  showMoreBtn.textContent = `+${tags.length - maxVisible} more`;
+  showMoreBtn.style.fontSize = '0.75rem';
+  showMoreBtn.style.padding = '4px 8px';
+
+  const updateTagDisplay = () => {
+    tagBox.innerHTML = '';
+    const shown = expanded ? tags : tags.slice(0, maxVisible);
+    shown.forEach(tag => {
+      const span = document.createElement('span');
+      span.textContent = tag;
+      span.onclick = () => window.location.href = `/search?q=${encodeURIComponent(tag)}`;
+      tagBox.appendChild(span);
+    });
+    if (tags.length > maxVisible) {
+      showMoreBtn.textContent = expanded ? 'Show less' : `+${tags.length - maxVisible} more`;
+      tagBox.appendChild(showMoreBtn);
+    }
+  };
+
+  showMoreBtn.onclick = (e) => {
+    e.preventDefault();
+    expanded = !expanded;
+    updateTagDisplay();
+  };
+
+  updateTagDisplay();
+}
+
 document.querySelectorAll('.slide').forEach(setupSlide);
 
 function setupSlide(container) {
@@ -402,11 +477,10 @@ function setupSlide(container) {
   const belowPlayBtn = container.querySelector('.below-play-button');
   const selector = container.querySelector('.resolution-selector');
   const dl = container.querySelector('.download-link');
-  const tagBox = container.querySelector('.video-tags');
 
   if (container.dataset.resolved === "true") return;
 
-  // Add to intersection observer for visibility tracking only
+  // Add to intersection observer for visibility tracking and tag preloading
   if (observer) {
     observer.observe(container);
   }
@@ -430,10 +504,6 @@ function setupSlide(container) {
       const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
       const data = await res.json();
       const streams = data.streams || {};
-      const tags = data.tags || [];
-      const title = data.title || "";
-
-      if (title) container.querySelector("h3").textContent = title;
 
       selector.innerHTML = "";
       if (!Object.keys(streams).length) {
@@ -500,40 +570,6 @@ function setupSlide(container) {
         console.error("Play error:", playError);
       }
 
-      // Tag rendering with improved UI
-      if (tagBox && tags.length) {
-        tagBox.innerHTML = '';
-        const maxVisible = window.innerWidth < 768 ? 4 : 6; // Fewer tags on mobile
-        let expanded = false;
-        const showMoreBtn = document.createElement('button');
-        showMoreBtn.textContent = `+${tags.length - maxVisible} more`;
-        showMoreBtn.style.fontSize = '0.75rem';
-        showMoreBtn.style.padding = '4px 8px';
-
-        const renderTags = () => {
-          tagBox.innerHTML = '';
-          const shown = expanded ? tags : tags.slice(0, maxVisible);
-          shown.forEach(tag => {
-            const span = document.createElement('span');
-            span.textContent = tag;
-            span.onclick = () => window.location.href = `/search?q=${encodeURIComponent(tag)}`;
-            tagBox.appendChild(span);
-          });
-          if (tags.length > maxVisible) {
-            showMoreBtn.textContent = expanded ? 'Show less' : `+${tags.length - maxVisible} more`;
-            tagBox.appendChild(showMoreBtn);
-          }
-        };
-
-        showMoreBtn.onclick = (e) => {
-          e.preventDefault();
-          expanded = !expanded;
-          renderTags();
-        };
-
-        renderTags();
-      }
-
       // Add event listeners for video controls
       selector.addEventListener('change', () => {
         const newStreamUrl = `/stream?url=${encodeURIComponent(selector.value)}`;
@@ -596,7 +632,8 @@ document.addEventListener('touchend', (e) => {
   }
 }, {passive: true});
 
-document.getElementById("loadMoreBtn").addEventListener("click", async () => {
+// Function for loading more videos
+function loadMoreVideos() {
   if (isLoading) return;
   isLoading = true;
   currentPage++;
@@ -605,74 +642,79 @@ document.getElementById("loadMoreBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="loader-dot"></span><span class="loader-dot"></span><span class="loader-dot"></span>';
 
-  try {
-    const res = await fetch(`/?page=${currentPage}`, {
-      headers: { "X-Requested-With": "XMLHttpRequest" }
-    });
-    const videos = await res.json();
-
-    if (!videos.length) {
-      btn.textContent = "No more videos";
-      return;
-    }
-
-    const feed = document.getElementById("videoFeed");
-    for (const video of videos) {
-      const div = document.createElement('div');
-      div.className = 'slide';
-      div.dataset.url = video.link;
-      div.dataset.loaded = 'false';
-      div.dataset.resolved = 'false';
-      div.innerHTML = `
-        <div class="video-container">
-          <video muted playsinline preload="none" poster="${video.thumbnail}"></video>
-          <div class="play-button"></div>
-        </div>
-        <button class="below-play-button">Play Video</button>
-        <div class="overlay">
-          <h3>${video.title}</h3>
-          <p>${video.duration} ${video.is_hd}</p>
-          <div class="video-tags">
-            ${(video.tags || []).map(tag => `<span onclick="window.location.href='/search?q=${encodeURIComponent(tag)}'">${tag}</span>`).join("")}
-          </div>
-          <div class="controls-row">
-            <select class="resolution-selector"><option>Loading...</option></select>
-            <a class="download-link" href="#" download>⬇ Download</a>
-            <a href="${video.link}" target="_blank">🔗 Source</a>
-          </div>
-        </div>`;
-      feed.appendChild(div);
-      setupSlide(div);
-
-      // Add to intersection observer
-      if (observer) {
-        observer.observe(div);
+  fetch(`/?page=${currentPage}`, {
+    headers: { "X-Requested-With": "XMLHttpRequest" }
+  })
+    .then(res => res.json())
+    .then(videos => {
+      if (!videos.length) {
+        btn.textContent = "No more videos";
+        return;
       }
-    }
 
-    // Add a subtle animation to new slides
-    const newSlides = feed.querySelectorAll('.slide:nth-last-child(-n+' + videos.length + ')');
-    newSlides.forEach((slide, index) => {
-      slide.style.opacity = "0";
-      slide.style.transform = "translateY(20px)";
-      slide.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+      const feed = document.getElementById("videoFeed");
+      for (const video of videos) {
+        const div = document.createElement('div');
+        div.className = 'slide';
+        div.dataset.url = video.link;
+        div.dataset.loaded = 'false';
+        div.dataset.resolved = 'false';
+        div.dataset.tagsLoaded = 'false';
+        div.innerHTML = `
+          <div class="video-container">
+            <video muted playsinline preload="none" poster="${video.thumbnail}"></video>
+            <div class="play-button"></div>
+          </div>
+          <button class="below-play-button">Play Video</button>
+          <div class="overlay">
+            <h3>${video.title}</h3>
+            <p>${video.duration} ${video.is_hd}</p>
+            <div class="video-tags">
+              ${(video.tags || []).map(tag => `<span onclick="window.location.href='/search?q=${encodeURIComponent(tag)}'">${tag}</span>`).join("")}
+            </div>
+            <div class="controls-row">
+              <select class="resolution-selector"><option>Loading...</option></select>
+              <a class="download-link" href="#" download>⬇ Download</a>
+              <a href="${video.link}" target="_blank">🔗 Source</a>
+            </div>
+          </div>`;
+        feed.appendChild(div);
+        setupSlide(div);
 
-      setTimeout(() => {
-        slide.style.opacity = "1";
-        slide.style.transform = "translateY(0)";
-      }, index * 100);
+        // Add to intersection observer
+        if (observer) {
+          observer.observe(div);
+        }
+      }
+
+      // Add a subtle animation to new slides
+      const newSlides = feed.querySelectorAll('.slide:nth-last-child(-n+' + videos.length + ')');
+      newSlides.forEach((slide, index) => {
+        slide.style.opacity = "0";
+        slide.style.transform = "translateY(20px)";
+        slide.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+
+        setTimeout(() => {
+          slide.style.opacity = "1";
+          slide.style.transform = "translateY(0)";
+        }, index * 100);
+      });
+
+      btn.disabled = false;
+      btn.textContent = "Load More";
+    })
+    .catch(e => {
+      console.error("Load more failed", e);
+      btn.textContent = "Retry";
+      btn.disabled = false;
+    })
+    .finally(() => {
+      isLoading = false;
     });
+}
 
-    btn.disabled = false;
-    btn.textContent = "Load More";
-  } catch (e) {
-    console.error("Load more failed", e);
-    btn.textContent = "Retry";
-    btn.disabled = false;
-  } finally {
-    isLoading = false;
-  }
-});
+// Attach load more event listener
+document.getElementById("loadMoreBtn").addEventListener("click", loadMoreVideos);
 
 // Error handling for debugging blank page issues
 window.addEventListener('error', function(e) {
