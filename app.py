@@ -39,8 +39,11 @@ PROXIES = {
     "https": "http://192.168.1.140:8887"
 } if USE_PROXY else None
 
-# Always show debug info
-logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
+# Optimize logging for production
+if DEBUG_MODE:
+    logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
+else:
+    logging.basicConfig(level=logging.WARNING, format='[%(levelname)s] %(message)s')
 
 # Optimized thread pool for free tier
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -69,9 +72,10 @@ def get_html(url: str) -> str:
             proxies=PROXIES
         )
         
-        # Always write debug file
-        with open("debug_page.html", "w", encoding="utf-8") as f:
-            f.write(response.text)
+        # Only write debug file in debug mode
+        if DEBUG_MODE:
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(response.text)
 
         response.raise_for_status()
         logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
@@ -343,20 +347,51 @@ def stream():
         return f"Stream failed: {e}", 500
 
 
+@app.route("/health")
+def health_check():
+    """Health check endpoint for Render"""
+    return {"status": "healthy", "service": "r34video-app"}, 200
+
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors"""
+    return render_template("index.html", 
+                         videos=[], 
+                         tags=[], 
+                         current_page=1,
+                         query="",
+                         proxy_enabled=USE_PROXY), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors"""
+    logging.error(f"Internal server error: {error}")
+    return {"error": "Internal server error"}, 500
+
+
 if __name__ == '__main__':
-    logging.info("="*50)
-    logging.info("🚀 Starting R34Video TikTok Style App")
-    logging.info("="*50)
-    logging.info(f"📡 USE_PROXY: {USE_PROXY}")
-    logging.info(f"🐛 DEBUG_MODE: {DEBUG_MODE}")
-    logging.info(f"⚡ MAX_WORKERS: {MAX_WORKERS}")
-    logging.info(f"💾 CACHE_SIZE: {CACHE_SIZE}")
-    logging.info(f"⏱️  REQUEST_TIMEOUT: {REQUEST_TIMEOUT}s")
-    logging.info(f"🌐 PROXIES: {PROXIES}")
-    logging.info(f"🎯 BASE_URL: {BASE_URL}")
-    logging.info("="*50)
-    
+    # Start background cleaner thread
     Thread(target=background_cleaner, daemon=True).start()
-    logging.info("🧹 Background cleaner thread started")
     
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    # Different startup behavior for development vs production
+    if DEBUG_MODE:
+        logging.info("="*50)
+        logging.info("🚀 Starting R34Video TikTok Style App (Development)")
+        logging.info("="*50)
+        logging.info(f"📡 USE_PROXY: {USE_PROXY}")
+        logging.info(f"🐛 DEBUG_MODE: {DEBUG_MODE}")
+        logging.info(f"⚡ MAX_WORKERS: {MAX_WORKERS}")
+        logging.info(f"💾 CACHE_SIZE: {CACHE_SIZE}")
+        logging.info(f"⏱️  REQUEST_TIMEOUT: {REQUEST_TIMEOUT}s")
+        logging.info(f"🌐 PROXIES: {PROXIES}")
+        logging.info(f"🎯 BASE_URL: {BASE_URL}")
+        logging.info("="*50)
+        logging.info("🧹 Background cleaner thread started")
+        
+        app.run(host='0.0.0.0', port=5001, debug=True)
+    else:
+        # Production mode - let Gunicorn handle the app
+        logging.warning("🚀 R34Video App starting in production mode")
+        logging.warning("🧹 Background cleaner thread started")

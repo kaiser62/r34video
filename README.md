@@ -33,9 +33,22 @@ The app uses proxy at `http://192.168.1.140:8887` when `USE_PROXY=true`.
 
 ### Render (Recommended)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+**Quick Setup:**
 1. Connect your GitHub repository to Render
-2. Use the provided `render.yaml` configuration
+2. Use the provided `render.yaml` configuration  
 3. Environment variables are pre-configured for free tier
+4. See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed guide
+
+**Production Environment Variables (Render):**
+```bash
+USE_PROXY=false
+DEBUG_MODE=false
+MAX_WORKERS=1
+CACHE_SIZE=32
+REQUEST_TIMEOUT=10
+```
 
 ### Manual Deployment
 
