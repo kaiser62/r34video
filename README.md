@@ -31,7 +31,17 @@ The app uses proxy at `http://192.168.1.140:8887` when `USE_PROXY=true`.
 
 ## Deployment
 
-### Render (Recommended)
+### Vercel (Serverless)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/kaiser62/r34video)
+
+**Quick Setup:**
+1. Click the deploy button above or connect your GitHub repository
+2. Vercel automatically detects `vercel.json` configuration
+3. Environment variables are pre-configured for serverless deployment
+4. See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for detailed guide
+
+### Render (Traditional Hosting)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
@@ -41,7 +51,7 @@ The app uses proxy at `http://192.168.1.140:8887` when `USE_PROXY=true`.
 3. Environment variables are pre-configured for free tier
 4. See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed guide
 
-**Production Environment Variables (Render):**
+**Production Environment Variables:**
 ```bash
 USE_PROXY=false
 DEBUG_MODE=false
