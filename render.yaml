@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: r34video-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --max-requests 1000 --max-requests-jitter 100 wsgi:app
+    plan: free
+    envVars:
+      - key: USE_PROXY
+        value: "true"
+      - key: DEBUG_MODE
+        value: "true"
+      - key: MAX_WORKERS
+        value: "1"
+      - key: CACHE_SIZE
+        value: "64"
+      - key: REQUEST_TIMEOUT
+        value: "8"
+      - key: FLASK_ENV
+        value: "production"
+      - key: PYTHONUNBUFFERED
+        value: "1"

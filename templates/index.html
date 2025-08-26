@@ -45,19 +45,23 @@
       position: relative;
       width: 100%;
       max-height: 75vh;
+      min-height: 400px;
       display: flex;
       justify-content: center;
+      align-items: center;
       background: #000;
       border-radius: 8px;
       overflow: hidden;
     }
 
-    video {
+    .video-container video {
       width: 100%;
       max-height: 75vh;
       object-fit: contain;
       background: #000;
-      border-radius: 8px; /* Slightly rounded corners for videos */
+      border-radius: 8px;
+      position: relative;
+      z-index: 2;
     }
 
     .overlay {
@@ -302,6 +306,201 @@
       to { transform: rotate(360deg); }
     }
 
+    /* Debug and Performance indicators */
+    .performance-indicator {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      z-index: 1000;
+      display: block;
+      max-width: 300px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .debug-info {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.7rem;
+      z-index: 1000;
+      max-width: 300px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: 'Courier New', monospace;
+    }
+
+    .debug-info div {
+      margin: 2px 0;
+    }
+
+    .debug-toggle {
+      position: fixed;
+      bottom: 10px;
+      right: 80px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      z-index: 1001;
+    }
+
+    /* Search functionality */
+    .search-container {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 1001;
+      display: flex;
+      gap: 5px;
+    }
+
+    .search-input {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.9rem;
+      width: 200px;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .search-input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .search-input:focus {
+      outline: none;
+      background: rgba(255, 255, 255, 0.25);
+      width: 250px;
+    }
+
+    .search-btn, .home-btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      font-weight: 500;
+    }
+
+    .search-btn:hover, .home-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    /* Thumbnail improvements */
+    .video-container img.thumbnail {
+      width: 100%;
+      height: 100%;
+      max-height: 75vh;
+      min-height: 400px;
+      object-fit: cover;
+      border-radius: 8px;
+      transition: opacity 0.3s ease;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      display: block;
+      background: #222;
+      opacity: 0.3;
+    }
+    
+    .video-container img.thumbnail.loaded {
+      opacity: 1;
+    }
+
+    .video-container video {
+      width: 100%;
+      height: 100%;
+      max-height: 75vh;
+      object-fit: contain;
+      border-radius: 8px;
+      z-index: 2;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .video-container .thumbnail-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.9rem;
+      z-index: 1;
+    }
+
+    .video-container .thumbnail-error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.7rem;
+      text-align: center;
+      z-index: 1;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px dashed rgba(255, 255, 255, 0.3);
+    }
+
+    /* Mobile search adjustments */
+    @media (max-width: 768px) {
+      .search-container {
+        top: 5px;
+        right: 5px;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .search-input {
+        width: 150px;
+        font-size: 0.8rem;
+        padding: 6px 10px;
+      }
+
+      .search-input:focus {
+        width: 180px;
+      }
+
+      .search-btn, .home-btn {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+      }
+
+      .performance-indicator {
+        top: 5px;
+        left: 5px;
+        font-size: 0.7rem;
+      }
+    }
+
     .loader-dot {
       display: inline-block;
       width: 8px;
@@ -344,7 +543,12 @@
     {% for video in videos %}
     <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false" data-tags-loaded="false">
       <div class="video-container">
-        <video muted playsinline preload="none" poster="{{ video.thumbnail }}"></video>
+        {% if video.thumbnail %}
+        <img class="thumbnail" src="{{ video.thumbnail }}" alt="{{ video.title }}" loading="lazy" onerror="handleThumbnailError(this)" onload="handleThumbnailLoad(this)" />
+        {% else %}
+        <div class="thumbnail-error">🖼️<br>No thumbnail<br>available</div>
+        {% endif %}
+        <video muted playsinline preload="none" style="display: none;"></video>
         <div class="play-button"></div>
       </div>
       <button class="below-play-button">Play Video</button>
@@ -353,7 +557,7 @@
         <p>{{ video.duration }} {{ video.is_hd }}</p>
         <div class="video-tags">
           {% for tag in video.tags %}
-          <span onclick="window.location.href='/search?q={{ tag }}'">{{ tag }}</span>
+          <span onclick="event.preventDefault(); searchForTag('{{ tag|replace("'", "\\'") }}')">{{ tag }}</span>
           {% endfor %}
         </div>
         <div class="controls-row">
@@ -369,12 +573,382 @@
   <div id="loadMoreContainer">
     <button id="loadMoreBtn">Load More</button>
   </div>
+
+  <!-- Performance Indicator -->
+  <div id="performanceIndicator" class="performance-indicator">
+    <div>Proxy: <span id="proxyStatus" style="color: {{ '#0f0' if proxy_enabled else '#f80' }}">{{ 'ON' if proxy_enabled else 'OFF' }}</span></div>
+    <div>Mode: <span id="currentMode">Home</span></div>
+    <div>Videos: <span id="videoCount">0</span></div>
+    <div>Page: <span id="currentPageDisplay">1</span></div>
+    <div>Requests: <span id="requestCount">0</span></div>
+  </div>
+
+  <!-- Debug Info -->
+  <div id="debugInfo" class="debug-info">
+    <div>🔍 Query: <span id="debugQuery">None</span></div>
+    <div>📡 Last URL: <span id="debugUrl">None</span></div>
+    <div>⏱️ Load Time: <span id="debugLoadTime">0ms</span></div>
+    <div>❌ Errors: <span id="debugErrors">0</span></div>
+    <div>🎯 Active Slides: <span id="debugActiveSlides">0</span></div>
+  </div>
+
+  <!-- Debug Toggle -->
+  <button id="debugToggle" class="debug-toggle" onclick="toggleDebug()">Debug</button>
+
+  <!-- Search Container -->
+  <div class="search-container">
+    <input type="text" id="searchInput" class="search-input" placeholder="Search videos..." />
+    <button id="searchBtn" class="search-btn">🔍</button>
+    <button id="homeBtn" class="home-btn" onclick="goHome()" style="display: none;">🏠</button>
+  </div>
 </div>
 
 <script>
 let currentPage = {{ current_page | default(1) }};
 let isLoading = false;
 let observer;
+let performanceStats = {
+  loadTime: 0,
+  requestsCount: 0,
+  errorsCount: 0
+};
+let currentSearchQuery = '{{ query | default("") }}';
+let isSearchMode = {{ 'true' if query else 'false' }};
+
+// Performance monitoring
+const startTime = performance.now();
+
+// Perform search function
+function performSearch() {
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const homeBtn = document.getElementById('homeBtn');
+  
+  const query = searchInput.value.trim();
+  if (!query) return;
+
+  console.log('🔍 Starting search for:', query);
+  currentSearchQuery = query;
+  isSearchMode = true;
+  currentPage = 1;
+
+  // Update UI
+  homeBtn.style.display = 'block';
+  searchBtn.innerHTML = '<div class="loader"></div>';
+  searchBtn.disabled = true;
+
+  // Clear current videos
+  const feed = document.getElementById('videoFeed');
+  feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Searching for: ' + query + '</div>';
+
+  // Perform search
+  const searchUrl = `/?q=${encodeURIComponent(query)}&page=1`;
+  console.log('📡 Fetching:', searchUrl);
+  
+  fetch(searchUrl, {
+    headers: { "X-Requested-With": "XMLHttpRequest" }
+  })
+  .then(res => {
+    console.log('📡 Search response status:', res.status);
+    return res.json();
+  })
+  .then(videos => {
+    console.log('📊 Search results:', videos.length, 'videos found');
+    
+    if (!videos || videos.length === 0) {
+      console.warn('⚠️ No search results found');
+      feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No videos found for: ' + query + '</div>';
+      updateDebugInfo('debugQuery', query);
+      updateDebugInfo('videoCount', 0);
+      return;
+    }
+
+    renderVideos(videos, true); // Clear feed and render new videos
+    console.log('✅ Search results rendered');
+    
+    // Update debug info
+    updateDebugInfo('debugQuery', query);
+    updateDebugInfo('currentMode', 'Search');
+    updateDebugInfo('currentPageDisplay', currentPage);
+    
+    // Update load more button for search
+    const loadMoreBtn = document.getElementById('loadMoreBtn');
+    loadMoreBtn.textContent = 'Load More Results';
+  })
+  .catch(err => {
+    console.error('❌ Search failed:', err);
+    handleRequestError(err, 'search');
+    feed.innerHTML = '<div style="color: red; padding: 20px; text-align: center;">Search failed. Please try again.</div>';
+  })
+  .finally(() => {
+    searchBtn.innerHTML = '🔍';
+    searchBtn.disabled = false;
+    console.log('🔍 Search operation completed');
+  });
+}
+
+// Search functionality
+function initializeSearch() {
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+
+  // Handle search input
+  searchInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      performSearch();
+    }
+  });
+
+  // Handle search button click
+  searchBtn.addEventListener('click', performSearch);
+}
+
+// Go back to home page
+function goHome() {
+  isSearchMode = false;
+  currentSearchQuery = '';
+  currentPage = 1;
+  
+  const homeBtn = document.getElementById('homeBtn');
+  const searchInput = document.getElementById('searchInput');
+  
+  homeBtn.style.display = 'none';
+  searchInput.value = '';
+
+  // Load home page videos
+  const feed = document.getElementById('videoFeed');
+  feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Loading...</div>';
+
+  fetch(`/?page=1`, {
+    headers: { "X-Requested-With": "XMLHttpRequest" }
+  })
+  .then(res => res.json())
+  .then(videos => {
+    renderVideos(videos, true); // Clear feed and render home videos
+    
+    // Update debug info
+    updateDebugInfo('debugQuery', 'None');
+    updateDebugInfo('currentMode', 'Home');
+    updateDebugInfo('currentPageDisplay', currentPage);
+    
+    const loadMoreBtn = document.getElementById('loadMoreBtn');
+    loadMoreBtn.textContent = 'Load More';
+  })
+  .catch(err => {
+    handleRequestError(err, 'home load');
+    feed.innerHTML = '<div style="color: red; padding: 20px; text-align: center;">Failed to load videos. Please refresh.</div>';
+  });
+}
+
+// Render videos with improved thumbnail handling
+function renderVideos(videos, clearFeed = false) {
+  const feed = document.getElementById('videoFeed');
+  
+  if (clearFeed) {
+    console.log('🧹 Clearing feed before rendering new videos');
+    feed.innerHTML = '';
+  }
+  
+  console.log('🎬 Rendering', videos.length, 'videos');
+  updateDebugInfo('videoCount', feed.children.length + videos.length);
+  
+  for (const video of videos) {
+    const div = document.createElement('div');
+    div.className = 'slide';
+    div.dataset.url = video.link;
+    div.dataset.loaded = 'false';
+    div.dataset.resolved = 'false';
+    div.dataset.tagsLoaded = 'false';
+    
+    const thumbnailHtml = video.thumbnail ? 
+      `<img class="thumbnail" src="${video.thumbnail}" alt="${video.title || 'Video'}" loading="lazy" onerror="handleThumbnailError(this)" onload="handleThumbnailLoad(this)" />` :
+      '<div class="thumbnail-error">🖼️<br>No thumbnail<br>available</div>';
+    
+    div.innerHTML = `
+      <div class="video-container">
+        ${thumbnailHtml}
+        <video muted playsinline preload="none" style="display: none;"></video>
+        <div class="play-button"></div>
+      </div>
+      <button class="below-play-button">Play Video</button>
+      <div class="overlay">
+        <h3>${video.title || 'Untitled Video'}</h3>
+        <p>${video.duration || ''} ${video.is_hd || ''}</p>
+        <div class="video-tags">
+          ${(video.tags || []).map(tag => `<span onclick="event.preventDefault(); event.stopPropagation(); searchForTag('${tag.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')">${tag}</span>`).join("")}
+        </div>
+        <div class="controls-row">
+          <select class="resolution-selector"><option>Loading...</option></select>
+          <a class="download-link" href="#" download>⬇ Download</a>
+          <a href="${video.link}" target="_blank">🔗 Source</a>
+        </div>
+      </div>`;
+    
+    feed.appendChild(div);
+    setupSlide(div);
+
+    // Add to intersection observer
+    if (observer) {
+      observer.observe(div);
+    }
+  }
+
+  // Add animation to new slides
+  const allSlides = Array.from(feed.querySelectorAll('.slide'));
+  const newSlides = clearFeed ? allSlides : allSlides.slice(-videos.length);
+  
+  newSlides.forEach((slide, index) => {
+    slide.style.opacity = "0";
+    slide.style.transform = "translateY(20px)";
+    slide.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+
+    setTimeout(() => {
+      slide.style.opacity = "1";
+      slide.style.transform = "translateY(0)";
+    }, index * 50);
+  });
+  
+  updateDebugInfo('debugActiveSlides', feed.children.length);
+}
+
+// Search for a specific tag
+function searchForTag(tag) {
+  const searchInput = document.getElementById('searchInput');
+  searchInput.value = tag;
+  
+  // Trigger search
+  currentSearchQuery = tag;
+  isSearchMode = true;
+  currentPage = 1;
+
+  const homeBtn = document.getElementById('homeBtn');
+  const searchBtn = document.getElementById('searchBtn');
+  
+  // Update UI
+  homeBtn.style.display = 'block';
+  searchBtn.innerHTML = '<div class="loader"></div>';
+  searchBtn.disabled = true;
+
+  // Clear current videos
+  const feed = document.getElementById('videoFeed');
+  feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Searching for: ' + tag + '</div>';
+
+  // Perform search
+  fetch(`/?q=${encodeURIComponent(tag)}&page=1`, {
+    headers: { "X-Requested-With": "XMLHttpRequest" }
+  })
+  .then(res => res.json())
+  .then(videos => {
+    if (!videos || videos.length === 0) {
+      feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No videos found for: ' + tag + '</div>';
+      updateDebugInfo('debugQuery', tag);
+      updateDebugInfo('videoCount', 0);
+      return;
+    }
+
+    renderVideos(videos, true); // Clear feed and render search results
+    
+    // Update debug info
+    updateDebugInfo('debugQuery', tag);
+    updateDebugInfo('currentMode', 'Tag Search');
+    updateDebugInfo('currentPageDisplay', currentPage);
+    
+    // Update load more button for search
+    const loadMoreBtn = document.getElementById('loadMoreBtn');
+    loadMoreBtn.textContent = 'Load More Results';
+  })
+  .catch(err => {
+    handleRequestError(err, 'tag search');
+    feed.innerHTML = '<div style="color: red; padding: 20px; text-align: center;">Search failed. Please try again.</div>';
+  })
+  .finally(() => {
+    searchBtn.innerHTML = '🔍';
+    searchBtn.disabled = false;
+  });
+}
+
+// Handle thumbnail loading success
+function handleThumbnailLoad(img) {
+  console.log('✅ Thumbnail loaded successfully:', img.src);
+  img.classList.add('loaded');
+}
+
+// Handle thumbnail loading errors
+function handleThumbnailError(img) {
+  console.warn('🖼️ Thumbnail failed to load:', img.src);
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'thumbnail-error';
+  errorDiv.innerHTML = '🖼️<br>Thumbnail<br>Unavailable';
+  img.parentNode.replaceChild(errorDiv, img);
+  
+  // Update error count
+  performanceStats.errorsCount++;
+  updateDebugInfo('debugErrors', performanceStats.errorsCount);
+}
+
+// Show performance indicator
+function updatePerformanceIndicator() {
+  const indicator = document.getElementById('performanceIndicator');
+  const proxyStatus = document.getElementById('proxyStatus');
+  
+  if (indicator) {
+    indicator.classList.add('show');
+    const loadTime = (performance.now() - startTime).toFixed(0);
+    proxyStatus.textContent = '{{ "ON" if proxy_enabled else "OFF" }}';
+    indicator.innerHTML = `Proxy: <span style="color: {{ "#0f0" if proxy_enabled else "#f80" }}">${proxyStatus.textContent}</span> | Load: ${loadTime}ms | Requests: ${performanceStats.requestsCount}`;
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      indicator.classList.remove('show');
+    }, 3000);
+  }
+}
+
+// Enhanced error handling
+function handleRequestError(error, context) {
+  performanceStats.errorsCount++;
+  updateDebugInfo('debugErrors', performanceStats.errorsCount);
+  console.error(`[${context}] Error:`, error);
+  
+  // Show user-friendly error message
+  const indicator = document.getElementById('performanceIndicator');
+  if (indicator) {
+    const originalContent = indicator.innerHTML;
+    indicator.innerHTML = `⚠️ Error in ${context}`;
+    indicator.style.backgroundColor = 'rgba(255, 100, 100, 0.8)';
+    
+    setTimeout(() => {
+      indicator.innerHTML = originalContent;
+      indicator.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    }, 2000);
+  }
+}
+
+// Track network requests and update debug info
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+  performanceStats.requestsCount++;
+  updateDebugInfo('requestCount', performanceStats.requestsCount);
+  updateDebugInfo('debugUrl', args[0]);
+  return originalFetch.apply(this, args);
+};
+
+// Debug functions
+function updateDebugInfo(elementId, value) {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function toggleDebug() {
+  const debugInfo = document.getElementById('debugInfo');
+  const isVisible = debugInfo.style.display !== 'none';
+  debugInfo.style.display = isVisible ? 'none' : 'block';
+  
+  const toggleBtn = document.getElementById('debugToggle');
+  toggleBtn.textContent = isVisible ? 'Debug' : 'Hide';
+}
 
 // Function to preload tags without loading video
 function preloadTags(container) {
@@ -409,7 +983,7 @@ function preloadTags(container) {
       container.dataset.tagsLoaded = "true";
     })
     .catch(err => {
-      console.error("Error loading tags:", err);
+      handleRequestError(err, 'tag loading');
       if (tagBox) tagBox.innerHTML = '<span style="opacity: 0.7;">Error loading tags</span>';
     });
 }
@@ -451,7 +1025,7 @@ function renderTags(tagBox, tags) {
     shown.forEach(tag => {
       const span = document.createElement('span');
       span.textContent = tag;
-      span.onclick = () => window.location.href = `/search?q=${encodeURIComponent(tag)}`;
+      span.onclick = () => searchForTag(tag);
       tagBox.appendChild(span);
     });
     if (tags.length > maxVisible) {
@@ -489,6 +1063,8 @@ function setupSlide(container) {
   const handlePlayClick = async () => {
     if (container.dataset.resolved === "true") return;
 
+    console.log('▶️ Play button clicked for:', container.dataset.url);
+
     // Add loading indicators
     if (playBtn) {
       playBtn.style.opacity = "0.5";
@@ -500,13 +1076,24 @@ function setupSlide(container) {
       belowPlayBtn.innerHTML = '<div class="loader"></div>';
     }
 
+    // Hide thumbnail and show video
+    const thumbnail = container.querySelector('.thumbnail');
+    if (thumbnail) {
+      thumbnail.style.opacity = "0.5";
+    }
+
     try {
+      console.log('📡 Resolving video streams...');
       const res = await fetch(`/resolve?url=${encodeURIComponent(container.dataset.url)}`);
       const data = await res.json();
       const streams = data.streams || {};
 
+      console.log('📊 Resolved streams:', Object.keys(streams).length, 'quality options');
+      console.log('🏷️ Video tags:', data.tags?.length || 0, 'tags');
+
       selector.innerHTML = "";
       if (!Object.keys(streams).length) {
+        console.warn('⚠️ No streams found for video');
         selector.innerHTML = "<option>No streams found</option>";
         if (playBtn) playBtn.innerHTML = "❌";
         if (belowPlayBtn) belowPlayBtn.textContent = "No Video";
@@ -533,6 +1120,13 @@ function setupSlide(container) {
       video.addEventListener('canplay', function() {
         if (playBtn) playBtn.remove();
         if (belowPlayBtn) belowPlayBtn.remove();
+
+        // Hide thumbnail and show video
+        const thumbnail = container.querySelector('.thumbnail');
+        if (thumbnail) {
+          thumbnail.style.display = 'none';
+        }
+        video.style.display = 'block';
 
         // Remove any error messages
         const errorMsg = container.querySelector('.video-error');
@@ -581,7 +1175,7 @@ function setupSlide(container) {
       });
 
     } catch (err) {
-      console.error("Error resolving stream:", err);
+      handleRequestError(err, 'stream resolution');
       selector.innerHTML = "<option>Error loading</option>";
       if (playBtn) {
         playBtn.innerHTML = "⚠️";
@@ -642,69 +1236,34 @@ function loadMoreVideos() {
   btn.disabled = true;
   btn.innerHTML = '<span class="loader-dot"></span><span class="loader-dot"></span><span class="loader-dot"></span>';
 
-  fetch(`/?page=${currentPage}`, {
+  // Determine URL based on search mode
+  const url = isSearchMode ? 
+    `/?q=${encodeURIComponent(currentSearchQuery)}&page=${currentPage}` :
+    `/?page=${currentPage}`;
+
+  fetch(url, {
     headers: { "X-Requested-With": "XMLHttpRequest" }
   })
     .then(res => res.json())
     .then(videos => {
       if (!videos.length) {
-        btn.textContent = "No more videos";
+        btn.textContent = isSearchMode ? "No more results" : "No more videos";
         return;
       }
 
-      const feed = document.getElementById("videoFeed");
-      for (const video of videos) {
-        const div = document.createElement('div');
-        div.className = 'slide';
-        div.dataset.url = video.link;
-        div.dataset.loaded = 'false';
-        div.dataset.resolved = 'false';
-        div.dataset.tagsLoaded = 'false';
-        div.innerHTML = `
-          <div class="video-container">
-            <video muted playsinline preload="none" poster="${video.thumbnail}"></video>
-            <div class="play-button"></div>
-          </div>
-          <button class="below-play-button">Play Video</button>
-          <div class="overlay">
-            <h3>${video.title}</h3>
-            <p>${video.duration} ${video.is_hd}</p>
-            <div class="video-tags">
-              ${(video.tags || []).map(tag => `<span onclick="window.location.href='/search?q=${encodeURIComponent(tag)}'">${tag}</span>`).join("")}
-            </div>
-            <div class="controls-row">
-              <select class="resolution-selector"><option>Loading...</option></select>
-              <a class="download-link" href="#" download>⬇ Download</a>
-              <a href="${video.link}" target="_blank">🔗 Source</a>
-            </div>
-          </div>`;
-        feed.appendChild(div);
-        setupSlide(div);
-
-        // Add to intersection observer
-        if (observer) {
-          observer.observe(div);
-        }
-      }
-
-      // Add a subtle animation to new slides
-      const newSlides = feed.querySelectorAll('.slide:nth-last-child(-n+' + videos.length + ')');
-      newSlides.forEach((slide, index) => {
-        slide.style.opacity = "0";
-        slide.style.transform = "translateY(20px)";
-        slide.style.transition = "opacity 0.3s ease, transform 0.3s ease";
-
-        setTimeout(() => {
-          slide.style.opacity = "1";
-          slide.style.transform = "translateY(0)";
-        }, index * 100);
-      });
+      // Use the renderVideos function to append new videos (don't clear feed)
+      renderVideos(videos, false); // Append to existing videos
+      
+      console.log('📄 Load more completed:', videos.length, 'new videos added');
+      
+      // Update debug info
+      updateDebugInfo('currentPageDisplay', currentPage);
 
       btn.disabled = false;
-      btn.textContent = "Load More";
+      btn.textContent = isSearchMode ? "Load More Results" : "Load More";
     })
     .catch(e => {
-      console.error("Load more failed", e);
+      handleRequestError(e, 'load more');
       btn.textContent = "Retry";
       btn.disabled = false;
     })
@@ -724,13 +1283,47 @@ window.addEventListener('error', function(e) {
 
 // Add fallback content
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('🚀 R34Video App Loading...');
+  console.log('📊 Initial Stats:', {
+    slides: document.querySelectorAll('.slide').length,
+    proxyEnabled: {{ proxy_enabled | lower }},
+    currentPage: currentPage,
+    performanceStats: performanceStats
+  });
+
+  // Initialize debug info
+  updateDebugInfo('debugQuery', currentSearchQuery || 'None');
+  updateDebugInfo('currentMode', isSearchMode ? 'Search' : 'Home');
+  updateDebugInfo('currentPageDisplay', currentPage);
+  updateDebugInfo('videoCount', document.querySelectorAll('.slide').length);
+  updateDebugInfo('debugActiveSlides', document.querySelectorAll('.slide').length);
+  updateDebugInfo('debugErrors', 0);
+  updateDebugInfo('debugLoadTime', Math.round(performance.now() - startTime) + 'ms');
+  
+  // Set up UI based on initial state
+  if (isSearchMode && currentSearchQuery) {
+    const searchInput = document.getElementById('searchInput');
+    const homeBtn = document.getElementById('homeBtn');
+    if (searchInput) searchInput.value = currentSearchQuery;
+    if (homeBtn) homeBtn.style.display = 'block';
+  }
+
+  // Initialize search functionality
+  initializeSearch();
+  console.log('🔍 Search functionality initialized');
+  
   // Check if content is actually rendering
   if (document.querySelectorAll('.slide').length === 0) {
+    console.warn('⚠️ No slides found, showing fallback');
     document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
   }
 
+  // Initialize performance indicator
+  updatePerformanceIndicator();
+  console.log('📈 Performance indicator initialized');
+
   // Log data for debugging
-  console.log('Slides found:', document.querySelectorAll('.slide').length);
+  console.log('✅ App initialization complete');
 });
 </script>
 </body>
