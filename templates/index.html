@@ -939,6 +939,12 @@ window.fetch = function(...args) {
 async function testConnection() {
   const connectionStatus = document.getElementById('connectionStatus');
   
+  // Check if element exists before proceeding
+  if (!connectionStatus) {
+    console.warn('⚠️ Connection status element not found, skipping connection test');
+    return;
+  }
+  
   try {
     connectionStatus.textContent = 'Testing...';
     connectionStatus.style.color = '#ff0';
@@ -1028,6 +1034,8 @@ function updateDebugInfo(elementId, value) {
   const element = document.getElementById(elementId);
   if (element) {
     element.textContent = value;
+  } else {
+    console.warn(`⚠️ Debug element '${elementId}' not found`);
   }
 }
 
@@ -1383,8 +1391,17 @@ document.getElementById("loadMoreBtn").addEventListener("click", loadMoreVideos)
 
 // Error handling for debugging blank page issues
 window.addEventListener('error', function(e) {
-  console.log('Global error handler', e);
-  document.body.innerHTML = '<div style="color:red; padding: 20px;">Error loading page: ' + e.message + '</div>';
+  console.error('Global error handler', e);
+  logError('global_error', e.message, { 
+    filename: e.filename, 
+    lineno: e.lineno, 
+    colno: e.colno 
+  });
+  
+  // Only show fallback if no content exists
+  if (!document.querySelector('.slide') && !document.querySelector('#videoFeed')) {
+    document.body.innerHTML = '<div style="color:red; padding: 20px;">Error loading page: ' + e.message + '</div>';
+  }
 });
 
 // Add fallback content
