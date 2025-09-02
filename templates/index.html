@@ -541,21 +541,28 @@
 <div class="wrapper">
   <div class="feed" id="videoFeed">
     <!-- Debug info for development -->
-    {% if not videos %}
-    <div style="color: white; padding: 20px; background: rgba(255,0,0,0.2); margin: 10px; border-radius: 5px;">
-      <h3>🔍 Debug Info: No Videos Found</h3>
-      <p>Videos count: {{ videos|length }}</p>
-      <p>Current page: {{ current_page }}</p>
-      <p>Query: "{{ query or 'None' }}"</p>
-      <p>Proxy enabled: {{ proxy_enabled }}</p>
+    <div style="color: white; padding: 20px; background: rgba(0,100,200,0.2); margin: 10px; border-radius: 5px;">
+      <h3>📊 Template Debug Info</h3>
+      <p><strong>Videos count:</strong> {{ videos|length }}</p>
+      <p><strong>Videos list:</strong> {{ videos[:1] if videos else 'Empty list' }}</p>
+      <p><strong>Current page:</strong> {{ current_page }}</p>
+      <p><strong>Query:</strong> "{{ query or 'None' }}"</p>
+      <p><strong>Proxy enabled:</strong> {{ proxy_enabled }}</p>
+      <p><strong>Debug mode:</strong> {{ debug_info is defined }}</p>
       {% if debug_info %}
       <details>
         <summary>System Debug Info</summary>
         <pre>{{ debug_info | pprint }}</pre>
       </details>
       {% endif %}
-      <p><a href="/test-fetch" style="color: yellow;">Test Backend Fetch</a></p>
-      <p><a href="/debug" style="color: yellow;">Full Debug Info</a></p>
+      <p><a href="/test-fetch" style="color: yellow;">🧪 Test Backend Fetch</a></p>
+      <p><a href="/debug" style="color: yellow;">🔍 Full Debug Info</a></p>
+    </div>
+    
+    {% if not videos %}
+    <div style="color: white; padding: 20px; background: rgba(255,0,0,0.3); margin: 10px; border-radius: 5px;">
+      <h3>⚠️ No Videos Found</h3>
+      <p>The backend should have provided mock data as fallback. This indicates a template rendering issue.</p>
     </div>
     {% endif %}
     
