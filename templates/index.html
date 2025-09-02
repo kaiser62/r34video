@@ -540,6 +540,25 @@
 <body>
 <div class="wrapper">
   <div class="feed" id="videoFeed">
+    <!-- Debug info for development -->
+    {% if not videos %}
+    <div style="color: white; padding: 20px; background: rgba(255,0,0,0.2); margin: 10px; border-radius: 5px;">
+      <h3>🔍 Debug Info: No Videos Found</h3>
+      <p>Videos count: {{ videos|length }}</p>
+      <p>Current page: {{ current_page }}</p>
+      <p>Query: "{{ query or 'None' }}"</p>
+      <p>Proxy enabled: {{ proxy_enabled }}</p>
+      {% if debug_info %}
+      <details>
+        <summary>System Debug Info</summary>
+        <pre>{{ debug_info | pprint }}</pre>
+      </details>
+      {% endif %}
+      <p><a href="/test-fetch" style="color: yellow;">Test Backend Fetch</a></p>
+      <p><a href="/debug" style="color: yellow;">Full Debug Info</a></p>
+    </div>
+    {% endif %}
+    
     {% for video in videos %}
     <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false" data-tags-loaded="false">
       <div class="video-container">
@@ -1437,8 +1456,18 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Check if content is actually rendering
   if (document.querySelectorAll('.slide').length === 0) {
-    console.warn('⚠️ No slides found, showing fallback');
-    document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
+    console.warn('⚠️ No slides found');
+    console.log('📊 Available debug info:', {
+      videoFeed: !!document.getElementById('videoFeed'),
+      debugInfo: !!document.querySelector('[style*="rgba(255,0,0,0.2)"]'),
+      bodyContent: document.body.innerHTML.length
+    });
+    
+    // Don't immediately replace content if there's debug info visible
+    if (!document.querySelector('[style*="rgba(255,0,0,0.2)"]')) {
+      console.warn('⚠️ No debug info found, showing generic fallback');
+      document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
+    }
   }
 
   // Initialize performance indicator

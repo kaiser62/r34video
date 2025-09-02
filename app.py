@@ -288,25 +288,45 @@ def index():
         'active_threads': len(active_futures)
     }
     
-    if query:
-        # Handle search functionality
-        logging.debug(f"[SEARCH] Query='{query}', Page={page}")
-        formatted_query = query.replace(" ", "-")
-        search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
-        logging.debug(f"[SEARCH] Search URL: {search_url}")
-        
-        html_text = get_html(search_url)
-        videos = extract_videos(html_text)
-        all_tags = extract_popular_tags(html_text)
-        
-        logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
-    else:
-        # Handle normal home page
-        html_text = get_html(f"{BASE_URL}/latest-updates/{page}/")
-        all_tags = extract_popular_tags(html_text)
-        videos = extract_videos(html_text)
-        
-        logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
+    try:
+        if query:
+            # Handle search functionality
+            logging.debug(f"[SEARCH] Query='{query}', Page={page}")
+            formatted_query = query.replace(" ", "-")
+            search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
+            logging.debug(f"[SEARCH] Search URL: {search_url}")
+            
+            html_text = get_html(search_url)
+            logging.debug(f"[SEARCH] HTML length: {len(html_text)} chars")
+            
+            if not html_text:
+                logging.error(f"[SEARCH] No HTML content received from {search_url}")
+                videos, all_tags = [], []
+            else:
+                videos = extract_videos(html_text)
+                all_tags = extract_popular_tags(html_text)
+            
+            logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
+        else:
+            # Handle normal home page
+            home_url = f"{BASE_URL}/latest-updates/{page}/"
+            logging.debug(f"[INDEX] Fetching from: {home_url}")
+            
+            html_text = get_html(home_url)
+            logging.debug(f"[INDEX] HTML length: {len(html_text)} chars")
+            
+            if not html_text:
+                logging.error(f"[INDEX] No HTML content received from {home_url}")
+                videos, all_tags = [], []
+            else:
+                all_tags = extract_popular_tags(html_text)
+                videos = extract_videos(html_text)
+            
+            logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
+            
+    except Exception as e:
+        logging.error(f"[INDEX] Error fetching content: {e}")
+        videos, all_tags = [], []
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         logging.debug("[INDEX] Returning JSON response")
@@ -316,7 +336,14 @@ def index():
         }
         return jsonify(videos)  # Keep existing format for compatibility
 
-    logging.debug("[INDEX] Rendering template")
+    logging.debug(f"[INDEX] Rendering template with {len(videos)} videos")
+    
+    # Add debug info about the data being passed to template
+    if DEBUG_MODE or not videos:
+        logging.warning(f"[INDEX] Template data: videos={len(videos)}, tags={len(all_tags)}, page={page}, query='{query}'")
+        if not videos:
+            logging.error("[INDEX] No videos to render - this will trigger fallback message")
+    
     return render_template("index.html", 
                          videos=videos, 
                          tags=all_tags, 
@@ -454,6 +481,47 @@ def not_found(error):
                          query="",
                          proxy_enabled=USE_PROXY), 404
 
+
+@app.route('/test-fetch')
+def test_fetch():
+    """Test endpoint to check if HTML fetching works"""
+    if not DEBUG_MODE and not os.getenv('VERCEL'):
+        return {"error": "Test endpoint disabled"}, 403
+    
+    try:
+        test_url = f"{BASE_URL}/latest-updates/1/"
+        html_content = get_html(test_url)
+        
+        if not html_content:
+            return {
+                "error": "No HTML content received",
+                "url": test_url,
+                "proxy_enabled": USE_PROXY,
+                "base_url": BASE_URL
+            }, 500
+            
+        # Try to extract some basic info
+        videos = extract_videos(html_content)
+        tags = extract_popular_tags(html_content)
+        
+        return {
+            "status": "success",
+            "url": test_url,
+            "html_length": len(html_content),
+            "videos_found": len(videos),
+            "tags_found": len(tags),
+            "first_video": videos[0] if videos else None,
+            "proxy_enabled": USE_PROXY,
+            "debug_mode": DEBUG_MODE
+        }
+        
+    except Exception as e:
+        logging.error(f"[TEST-FETCH] Error: {e}")
+        return {
+            "error": str(e),
+            "url": test_url if 'test_url' in locals() else "N/A",
+            "proxy_enabled": USE_PROXY
+        }, 500
 
 @app.route('/favicon.ico')
 def favicon():
