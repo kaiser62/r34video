@@ -462,32 +462,41 @@ def index():
     except Exception as e:
         logging.error(f"💥 [INDEX] Error fetching content: {e}")
         videos, all_tags = [], []
-        
-        # Try mock data as absolute fallback for testing
-        if DEBUG_MODE and not videos:
-            logging.warning("🧪 [INDEX] Adding mock data for testing")
-            videos = [
-                {
-                    "id": "mock1",
-                    "link": f"{BASE_URL}/video/mock1/test-video-1/",
-                    "thumbnail": "https://via.placeholder.com/300x200/333/fff?text=Test+Video+1",
-                    "title": "Test Video 1 (Mock Data)",
-                    "is_hd": "HD",
-                    "duration": "5:00",
-                    "tags": ["test", "mock", "debug"]
-                },
-                {
-                    "id": "mock2", 
-                    "link": f"{BASE_URL}/video/mock2/test-video-2/",
-                    "thumbnail": "https://via.placeholder.com/300x200/666/fff?text=Test+Video+2",
-                    "title": "Test Video 2 (Mock Data)",
-                    "is_hd": "",
-                    "duration": "3:30", 
-                    "tags": ["test", "debug"]
-                }
-            ]
-            all_tags = ["test", "mock", "debug", "placeholder"]
-            logging.warning(f"🧪 [INDEX] Mock data created: {len(videos)} videos")
+    
+    # Always provide mock data if no real videos found (moved outside try block)
+    if not videos:
+        logging.warning("🧪 [INDEX] No real videos found, using mock data for testing")
+        videos = [
+            {
+                "id": "mock1",
+                "link": f"{BASE_URL}/video/mock1/test-video-1/",
+                "thumbnail": "https://via.placeholder.com/300x200/333/fff?text=Test+Video+1",
+                "title": "Test Video 1 (Mock Data) - Site Connection Test",
+                "is_hd": "HD",
+                "duration": "5:00",
+                "tags": ["test", "mock", "debug", "connection-test"]
+            },
+            {
+                "id": "mock2", 
+                "link": f"{BASE_URL}/video/mock2/test-video-2/",
+                "thumbnail": "https://via.placeholder.com/300x200/666/fff?text=Test+Video+2",
+                "title": "Test Video 2 (Mock Data) - Debug Mode Active",
+                "is_hd": "",
+                "duration": "3:30", 
+                "tags": ["test", "debug", "mock-data"]
+            },
+            {
+                "id": "mock3",
+                "link": f"{BASE_URL}/video/mock3/test-video-3/", 
+                "thumbnail": "https://via.placeholder.com/300x200/999/fff?text=Test+Video+3",
+                "title": "Test Video 3 (Mock Data) - UI Testing",
+                "is_hd": "4K",
+                "duration": "10:15",
+                "tags": ["ui-test", "placeholder", "demo"]
+            }
+        ]
+        all_tags = ["test", "mock", "debug", "placeholder", "connection-test", "ui-test", "demo"]
+        logging.warning(f"🧪 [INDEX] Mock data created: {len(videos)} videos, {len(all_tags)} tags")
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         logging.debug("[INDEX] Returning JSON response")
