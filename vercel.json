@@ -5,7 +5,8 @@
       "src": "wsgi.py",
       "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "15mb"
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
       }
     }
   ],
@@ -25,10 +26,5 @@
     "PYTHONUNBUFFERED": "1",
     "PYTHONDONTWRITEBYTECODE": "1",
     "VERCEL": "1"
-  },
-  "functions": {
-    "wsgi.py": {
-      "maxDuration": 30
-    }
   }
 }
