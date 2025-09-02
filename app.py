@@ -5,6 +5,7 @@ import logging
 import html
 import os
 import gc
+import sys
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -12,16 +13,23 @@ from threading import Lock, Thread
 import time
 from functools import lru_cache
 
-# Configuration
-USE_PROXY = os.getenv('USE_PROXY', 'true').lower() == 'true'
+# Configuration optimized for serverless
+USE_PROXY = os.getenv('USE_PROXY', 'false').lower() == 'true'  # Default false for serverless
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
-MAX_WORKERS = int(os.getenv('MAX_WORKERS', '2'))
-CACHE_SIZE = int(os.getenv('CACHE_SIZE', '128'))
-REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '8'))
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '1'))  # Optimized for Vercel
+CACHE_SIZE = int(os.getenv('CACHE_SIZE', '32'))   # Reduced for serverless memory limits
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '10'))  # Increased for stability
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
 BASE_URL = "https://rule34video.com"
+
+# Alternative base URLs to try if main site fails
+ALTERNATIVE_URLS = [
+    "https://rule34video.com",
+    "https://www.rule34video.com", 
+    "http://rule34video.com"
+]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -32,6 +40,12 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
+    "DNT": "1",
+    "Sec-Fetch-Dest": "document", 
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
 }
 
 PROXIES = {
@@ -54,17 +68,47 @@ future_lock = Lock()
 session_pool = requests.Session()
 session_pool.headers.update(HEADERS)
 
-# Memory optimization
-def periodic_gc():
-    while True:
-        time.sleep(120)  # Run garbage collection every 2 minutes
-        gc.collect()
+# Configure session for better reliability
+session_pool.verify = True  # SSL verification
+session_pool.timeout = REQUEST_TIMEOUT
+session_pool.max_redirects = 5
 
-Thread(target=periodic_gc, daemon=True).start()
+# Add retry strategy for better reliability
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "OPTIONS"]
+)
+
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session_pool.mount("http://", adapter)
+session_pool.mount("https://", adapter)
+
+logging.warning(f"🔧 [INIT] Session configured with {REQUEST_TIMEOUT}s timeout and retry strategy")
+
+# Serverless-optimized memory management
+def serverless_gc():
+    """Aggressive garbage collection for serverless environments"""
+    if os.getenv('FLASK_ENV') == 'production':
+        gc.collect()
+        
+# Run GC after each request in production
+@app.after_request
+def cleanup_memory(response):
+    if os.getenv('FLASK_ENV') == 'production':
+        serverless_gc()
+    return response
 
 @lru_cache(maxsize=CACHE_SIZE)
 def get_html(url: str) -> str:
-    logging.debug(f"Fetching HTML from: {url}")
+    logging.warning(f"🌐 [GET_HTML] Starting fetch from: {url}")
+    logging.warning(f"🔧 [GET_HTML] Config - USE_PROXY={USE_PROXY}, PROXIES={PROXIES}")
+    logging.warning(f"🔧 [GET_HTML] Timeout: {REQUEST_TIMEOUT}s, Headers: {HEADERS['User-Agent'][:50]}...")
+    
     try:
         response = session_pool.get(
             url, 
@@ -72,16 +116,39 @@ def get_html(url: str) -> str:
             proxies=PROXIES
         )
         
-        # Only write debug file in debug mode
+        logging.warning(f"📡 [GET_HTML] Response status: {response.status_code}")
+        logging.warning(f"📏 [GET_HTML] Response length: {len(response.text)} chars")
+        logging.warning(f"📄 [GET_HTML] Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+        
+        # Log first 500 chars for debugging
         if DEBUG_MODE:
-            with open("debug_page.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
+            preview = response.text[:500].replace('\n', ' ').replace('\r', '')
+            logging.warning(f"👁️ [GET_HTML] HTML Preview: {preview}...")
+        
+        # Skip debug file writing in serverless to avoid filesystem issues
+        if DEBUG_MODE and not os.getenv('VERCEL'):
+            try:
+                with open("debug_page.html", "w", encoding="utf-8") as f:
+                    f.write(response.text)
+                logging.warning(f"💾 [GET_HTML] Saved debug file")
+            except Exception as write_error:
+                logging.warning(f"💾 [GET_HTML] Could not save debug file: {write_error}")
 
         response.raise_for_status()
-        logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
+        logging.warning(f"✅ [GET_HTML] Successfully fetched {len(response.text)} characters")
         return response.text
+        
+    except requests.exceptions.Timeout as e:
+        logging.error(f"⏰ [GET_HTML] Timeout error after {REQUEST_TIMEOUT}s: {e}")
+        return ""
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"🔌 [GET_HTML] Connection error: {e}")
+        return ""
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"🚫 [GET_HTML] HTTP error: {e} (Status: {response.status_code if 'response' in locals() else 'Unknown'})")
+        return ""
     except Exception as e:
-        logging.error(f"Failed to fetch HTML: {e}")
+        logging.error(f"❌ [GET_HTML] Unexpected error: {type(e).__name__}: {e}")
         return ""
 
 
@@ -100,15 +167,67 @@ def extract_popular_tags(html_text: str) -> list[str]:
 
 
 def extract_videos(html_text: str) -> list[dict]:
-    logging.debug("Extracting videos from HTML...")
+    logging.warning(f"🎬 [EXTRACT_VIDEOS] Starting extraction from {len(html_text)} chars of HTML")
+    
+    if not html_text:
+        logging.error(f"❌ [EXTRACT_VIDEOS] No HTML content provided")
+        return []
+    
     soup = BeautifulSoup(html_text, "html.parser")
-    video_items = soup.select("div.item.thumb")
+    
+    # Try different selectors to find video items
+    selectors_to_try = [
+        "div.item.thumb",
+        ".item.thumb",
+        "div.item",
+        ".item",
+        "div.thumb",
+        ".video-item",
+        "article",
+        "div[class*='item']",
+        "div[class*='thumb']",
+        "div[class*='video']"
+    ]
+    
+    video_items = []
+    for selector in selectors_to_try:
+        video_items = soup.select(selector)
+        logging.warning(f"🔍 [EXTRACT_VIDEOS] Selector '{selector}': found {len(video_items)} items")
+        if video_items:
+            break
+    
+    if not video_items:
+        logging.error(f"❌ [EXTRACT_VIDEOS] No video items found with any selector")
+        # Log some of the HTML structure for debugging
+        all_divs = soup.select("div")
+        logging.warning(f"📋 [EXTRACT_VIDEOS] Total divs found: {len(all_divs)}")
+        if all_divs:
+            sample_classes = [div.get('class', []) for div in all_divs[:10]]
+            logging.warning(f"📋 [EXTRACT_VIDEOS] Sample div classes: {sample_classes}")
+        return []
 
+    logging.warning(f"📦 [EXTRACT_VIDEOS] Processing {len(video_items)} video items")
     videos = []
-    for item in video_items:
-        link_tag = item.select_one('a.js-open-popup[href*="/video/"]')
+    for i, item in enumerate(video_items):
+        # Try different link selectors
+        link_selectors = [
+            'a.js-open-popup[href*="/video/"]',
+            'a[href*="/video/"]',
+            'a.js-open-popup',
+            'a',
+            '[href*="/video/"]'
+        ]
+        
+        link_tag = None
+        for link_selector in link_selectors:
+            link_tag = item.select_one(link_selector)
+            if link_tag:
+                logging.warning(f"🔗 [EXTRACT_VIDEOS] Item {i}: Found link with selector '{link_selector}'")
+                break
+        
         if not link_tag:
-            continue  # skip non-video blocks
+            logging.warning(f"⚠️ [EXTRACT_VIDEOS] Item {i}: No link found, skipping")
+            continue
 
         href = link_tag['href']
         full_link = urljoin(BASE_URL, href)
@@ -128,14 +247,14 @@ def extract_videos(html_text: str) -> list[dict]:
             if alt_thumbnail:
                 thumbnail = alt_thumbnail.get("src") or alt_thumbnail.get("data-src") or alt_thumbnail.get("data-original") or ""
         
-        logging.debug(f"[VIDEO] Extracted thumbnail for {video_id}: {thumbnail}")
+        logging.warning(f"🖼️ [EXTRACT_VIDEOS] Item {i} (ID: {video_id}): thumbnail='{thumbnail[:100] if thumbnail else 'None'}...'")
 
         duration_tag = item.select_one(".time")
         duration = duration_tag.text.strip() if duration_tag else ""
 
         is_hd = "HD" if item.select_one(".quality") else ""
 
-        videos.append({
+        video_data = {
             "id": video_id,
             "link": full_link,
             "thumbnail": thumbnail,
@@ -143,9 +262,11 @@ def extract_videos(html_text: str) -> list[dict]:
             "is_hd": is_hd,
             "duration": duration,
             "tags": [],
-        })
+        }
+        videos.append(video_data)
+        logging.warning(f"✅ [EXTRACT_VIDEOS] Item {i}: Successfully extracted video '{title[:50]}...' (ID: {video_id})")
 
-    logging.debug(f"Returning {len(videos)} videos")
+    logging.warning(f"🎯 [EXTRACT_VIDEOS] Final result: {len(videos)} videos extracted")
     return videos
 
 
@@ -204,8 +325,12 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
 
 
 def threaded_resolve(video_page_url: str) -> dict:
+    # Simplified for serverless - direct execution for better reliability
+    if os.getenv('VERCEL') or MAX_WORKERS == 1:
+        return resolve_all_video_urls(video_page_url)
+    
+    # Original threading logic for multi-worker environments
     with future_lock:
-        # Adaptive max concurrent futures based on configuration
         if len(active_futures) >= MAX_WORKERS:
             oldest_url = next(iter(active_futures))
             logging.debug(f"[THREAD] Killing oldest thread: {oldest_url}")
@@ -222,6 +347,27 @@ def threaded_resolve(video_page_url: str) -> dict:
         return {"streams": {}, "tags": [], "title": ""}
 
 
+def get_debug_context():
+    """Get current debug context information"""
+    try:
+        return {
+            'timestamp': time.time(),
+            'proxy_enabled': USE_PROXY,
+            'vercel_env': bool(os.getenv('VERCEL')),
+            'debug_mode': DEBUG_MODE,
+            'max_workers': MAX_WORKERS,
+            'cache_size': CACHE_SIZE,
+            'request_timeout': REQUEST_TIMEOUT,
+            'base_url': BASE_URL,
+            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            'active_futures_count': len(active_futures),
+            'flask_env': os.getenv('FLASK_ENV'),
+            'user_agent': HEADERS.get('User-Agent', ''),
+            'proxies_config': bool(PROXIES)
+        }
+    except Exception as e:
+        return {'error': f'Debug context error: {e}'}
+
 def background_cleaner(interval: int = 300):  # More frequent cleanup
     while True:
         time.sleep(interval)
@@ -237,40 +383,144 @@ def index():
     page = request.args.get("page", "1")
     query = request.args.get("q", "").strip()
     
+    # Enhanced debug logging
     logging.debug(f"[INDEX] Loading page {page}, query='{query}'")
     logging.debug(f"[CONFIG] USE_PROXY={USE_PROXY}, DEBUG_MODE={DEBUG_MODE}")
+    logging.debug(f"[ENV] VERCEL={os.getenv('VERCEL')}, FLASK_ENV={os.getenv('FLASK_ENV')}")
     
-    if query:
-        # Handle search functionality
-        logging.debug(f"[SEARCH] Query='{query}', Page={page}")
-        formatted_query = query.replace(" ", "-")
-        search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
-        logging.debug(f"[SEARCH] Search URL: {search_url}")
+    # Connection debug info
+    debug_info = {
+        'proxy_enabled': USE_PROXY,
+        'vercel_env': bool(os.getenv('VERCEL')),
+        'max_workers': MAX_WORKERS,
+        'cache_size': CACHE_SIZE,
+        'request_timeout': REQUEST_TIMEOUT,
+        'base_url': BASE_URL,
+        'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        'active_threads': len(active_futures)
+    }
+    
+    try:
+        logging.warning(f"🏠 [INDEX] Starting request: page={page}, query='{query}'")
+        logging.warning(f"🔧 [INDEX] Current config: proxy={USE_PROXY}, debug={DEBUG_MODE}, workers={MAX_WORKERS}")
         
-        html_text = get_html(search_url)
-        videos = extract_videos(html_text)
-        all_tags = extract_popular_tags(html_text)
-        
-        logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
-    else:
-        # Handle normal home page
-        html_text = get_html(f"{BASE_URL}/latest-updates/{page}/")
-        all_tags = extract_popular_tags(html_text)
-        videos = extract_videos(html_text)
-        
-        logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
+        if query:
+            # Handle search functionality
+            logging.warning(f"🔍 [SEARCH] Query='{query}', Page={page}")
+            formatted_query = query.replace(" ", "-")
+            search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
+            logging.debug(f"[SEARCH] Search URL: {search_url}")
+            
+            html_text = get_html(search_url)
+            logging.debug(f"[SEARCH] HTML length: {len(html_text)} chars")
+            
+            if not html_text:
+                logging.error(f"[SEARCH] No HTML content received from {search_url}")
+                videos, all_tags = [], []
+            else:
+                videos = extract_videos(html_text)
+                all_tags = extract_popular_tags(html_text)
+            
+            logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
+        else:
+            # Try multiple home page URLs
+            home_urls_to_try = [
+                f"{BASE_URL}/latest-updates/{page}/",
+                f"{BASE_URL}/latest/{page}/", 
+                f"{BASE_URL}/page/{page}/",
+                f"{BASE_URL}/latest-updates/",
+                f"{BASE_URL}/",
+                f"{BASE_URL}/videos/",
+                f"{BASE_URL}/newest/"
+            ]
+            
+            html_text = ""
+            successful_url = None
+            
+            for home_url in home_urls_to_try:
+                logging.warning(f"🏠 [INDEX] Trying URL: {home_url}")
+                html_text = get_html(home_url)
+                if html_text and len(html_text) > 1000:  # Reasonable minimum size
+                    successful_url = home_url
+                    logging.warning(f"✅ [INDEX] Success with URL: {home_url} ({len(html_text)} chars)")
+                    break
+                else:
+                    logging.warning(f"❌ [INDEX] Failed/small response from: {home_url} ({len(html_text)} chars)")
+            
+            if not successful_url:
+                logging.error(f"💥 [INDEX] All home URLs failed!")
+            
+            if not html_text:
+                logging.error(f"[INDEX] No HTML content received from {home_url}")
+                videos, all_tags = [], []
+            else:
+                all_tags = extract_popular_tags(html_text)
+                videos = extract_videos(html_text)
+            
+            logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
+            
+    except Exception as e:
+        logging.error(f"💥 [INDEX] Error fetching content: {e}")
+        videos, all_tags = [], []
+    
+    # Always provide mock data if no real videos found (moved outside try block)
+    if not videos:
+        logging.warning("🧪 [INDEX] No real videos found, using mock data for testing")
+        videos = [
+            {
+                "id": "mock1",
+                "link": f"{BASE_URL}/video/mock1/test-video-1/",
+                "thumbnail": "https://via.placeholder.com/300x200/333/fff?text=Test+Video+1",
+                "title": "Test Video 1 (Mock Data) - Site Connection Test",
+                "is_hd": "HD",
+                "duration": "5:00",
+                "tags": ["test", "mock", "debug", "connection-test"]
+            },
+            {
+                "id": "mock2", 
+                "link": f"{BASE_URL}/video/mock2/test-video-2/",
+                "thumbnail": "https://via.placeholder.com/300x200/666/fff?text=Test+Video+2",
+                "title": "Test Video 2 (Mock Data) - Debug Mode Active",
+                "is_hd": "",
+                "duration": "3:30", 
+                "tags": ["test", "debug", "mock-data"]
+            },
+            {
+                "id": "mock3",
+                "link": f"{BASE_URL}/video/mock3/test-video-3/", 
+                "thumbnail": "https://via.placeholder.com/300x200/999/fff?text=Test+Video+3",
+                "title": "Test Video 3 (Mock Data) - UI Testing",
+                "is_hd": "4K",
+                "duration": "10:15",
+                "tags": ["ui-test", "placeholder", "demo"]
+            }
+        ]
+        all_tags = ["test", "mock", "debug", "placeholder", "connection-test", "ui-test", "demo"]
+        logging.warning(f"🧪 [INDEX] Mock data created: {len(videos)} videos, {len(all_tags)} tags")
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         logging.debug("[INDEX] Returning JSON response")
-        return jsonify(videos)
+        response_data = {
+            'videos': videos,
+            'debug_info': debug_info if DEBUG_MODE else None
+        }
+        return jsonify(videos)  # Keep existing format for compatibility
 
-    logging.debug("[INDEX] Rendering template")
+    logging.debug(f"[INDEX] Rendering template with {len(videos)} videos")
+    
+    # Add debug info about the data being passed to template
+    if DEBUG_MODE or not videos:
+        logging.warning(f"[INDEX] Template data: videos={len(videos)}, tags={len(all_tags)}, page={page}, query='{query}'")
+        if not videos:
+            logging.error("[INDEX] No videos to render - this will trigger fallback message")
+    
     return render_template("index.html", 
                          videos=videos, 
                          tags=all_tags, 
                          current_page=int(page),
                          query=query,
-                         proxy_enabled=USE_PROXY)
+                         proxy_enabled=USE_PROXY,
+                         debug_info=debug_info)
 
 
 
@@ -282,11 +532,33 @@ def resolve():
     
     if not video_url:
         logging.warning("[RESOLVE] Missing video URL")
-        return jsonify({"streams": {}, "tags": [], "title": ""}), 400
+        return jsonify({
+            "streams": {}, 
+            "tags": [], 
+            "title": "",
+            "error": "Missing video URL",
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }), 400
+    
+    try:
+        result = threaded_resolve(video_url)
+        logging.debug(f"[RESOLVE] Result: {len(result.get('streams', {}))} streams, {len(result.get('tags', []))} tags")
         
-    result = threaded_resolve(video_url)
-    logging.debug(f"[RESOLVE] Result: {len(result.get('streams', {}))} streams, {len(result.get('tags', []))} tags")
-    return jsonify(result)
+        # Add debug info if enabled
+        if DEBUG_MODE:
+            result['debug_info'] = get_debug_context()
+            result['request_url'] = video_url
+            
+        return jsonify(result)
+    except Exception as e:
+        logging.error(f"[RESOLVE] Error: {e}")
+        return jsonify({
+            "streams": {}, 
+            "tags": [], 
+            "title": "",
+            "error": str(e),
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }), 500
 
 
 @app.route("/stream")
@@ -296,7 +568,11 @@ def stream():
     
     if not video_url:
         logging.warning("[STREAM] Missing video URL")
-        return "Missing video URL", 400
+        error_response = {
+            "error": "Missing video URL",
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }
+        return jsonify(error_response), 400
         
     video_url = html.unescape(video_url)
     headers = dict(HEADERS)
@@ -320,8 +596,10 @@ def stream():
         content_type = r.headers.get("Content-Type", "video/mp4")
         logging.debug(f"[STREAM] Status: {r.status_code}, Content-Type: {content_type}")
 
+        # Optimized chunk size for Vercel serverless
+        chunk_size = 4096 if os.getenv('VERCEL') else 8192
         response = Response(
-            stream_with_context(r.iter_content(chunk_size=8192)),  # Optimized chunk size for free tier
+            stream_with_context(r.iter_content(chunk_size=chunk_size)),
             status=r.status_code,
             content_type=content_type
         )
@@ -349,8 +627,18 @@ def stream():
 
 @app.route("/health")
 def health_check():
-    """Health check endpoint for Render"""
-    return {"status": "healthy", "service": "r34video-app"}, 200
+    """Health check endpoint with debug info"""
+    return {
+        "status": "healthy", 
+        "service": "r34video-app",
+        "proxy_enabled": USE_PROXY,
+        "debug_mode": DEBUG_MODE,
+        "vercel": bool(os.getenv('VERCEL')),
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "active_futures": len(active_futures),
+        "cache_size": CACHE_SIZE,
+        "max_workers": MAX_WORKERS
+    }, 200
 
 
 @app.errorhandler(404)
@@ -364,11 +652,123 @@ def not_found(error):
                          proxy_enabled=USE_PROXY), 404
 
 
+@app.route('/test-fetch')
+def test_fetch():
+    """Test endpoint to check if HTML fetching works"""
+    if not DEBUG_MODE and not os.getenv('VERCEL'):
+        return {"error": "Test endpoint disabled"}, 403
+    
+    try:
+        test_url = f"{BASE_URL}/latest-updates/1/"
+        html_content = get_html(test_url)
+        
+        if not html_content:
+            return {
+                "error": "No HTML content received",
+                "url": test_url,
+                "proxy_enabled": USE_PROXY,
+                "base_url": BASE_URL
+            }, 500
+            
+        # Try to extract some basic info
+        videos = extract_videos(html_content)
+        tags = extract_popular_tags(html_content)
+        
+        return {
+            "status": "success",
+            "url": test_url,
+            "html_length": len(html_content),
+            "videos_found": len(videos),
+            "tags_found": len(tags),
+            "first_video": videos[0] if videos else None,
+            "proxy_enabled": USE_PROXY,
+            "debug_mode": DEBUG_MODE
+        }
+        
+    except Exception as e:
+        logging.error(f"[TEST-FETCH] Error: {e}")
+        return {
+            "error": str(e),
+            "url": test_url if 'test_url' in locals() else "N/A",
+            "proxy_enabled": USE_PROXY
+        }, 500
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve a simple favicon to prevent 404 errors"""
+    import base64
+    from io import BytesIO
+    
+    # Simple 16x16 transparent favicon
+    favicon_data = base64.b64decode(
+        'AAABAAEAEBAAAAEACABoBQAAFgAAACgAAAAQAAAAIAAAAAEACAAAAAAAAAEAAAAAAAAAAAAAAAEAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//'
+        'AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=='
+    )
+    
+    response = Response(favicon_data)
+    response.headers['Content-Type'] = 'image/x-icon'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+@app.route("/debug")
+def debug_info():
+    """Debug endpoint with comprehensive system information"""
+    if not DEBUG_MODE and not os.getenv('VERCEL'):
+        return {"error": "Debug mode disabled"}, 403
+    
+    import platform
+    debug_data = {
+        "timestamp": time.time(),
+        "environment": {
+            "proxy_enabled": USE_PROXY,
+            "debug_mode": DEBUG_MODE,
+            "vercel_env": bool(os.getenv('VERCEL')),
+            "flask_env": os.getenv('FLASK_ENV'),
+            "python_version": platform.python_version(),
+            "platform": platform.platform()
+        },
+        "configuration": {
+            "max_workers": MAX_WORKERS,
+            "cache_size": CACHE_SIZE,
+            "request_timeout": REQUEST_TIMEOUT,
+            "base_url": BASE_URL,
+            "proxies_enabled": bool(PROXIES)
+        },
+        "runtime_stats": {
+            "active_futures": len(active_futures),
+            "cache_info": get_html.cache_info()._asdict() if hasattr(get_html, 'cache_info') else None
+        },
+        "headers": dict(request.headers),
+        "request_info": {
+            "method": request.method,
+            "url": request.url,
+            "remote_addr": request.remote_addr,
+            "user_agent": request.user_agent.string
+        }
+    }
+    return jsonify(debug_data)
+
 @app.errorhandler(500)
 def internal_error(error):
-    """Handle 500 errors"""
+    """Handle 500 errors with debug info"""
     logging.error(f"Internal server error: {error}")
-    return {"error": "Internal server error"}, 500
+    error_response = {
+        "error": "Internal server error",
+        "debug_info": get_debug_context() if DEBUG_MODE else None
+    }
+    return jsonify(error_response), 500
 
 
 if __name__ == '__main__':

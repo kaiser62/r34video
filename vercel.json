@@ -3,7 +3,11 @@
   "builds": [
     {
       "src": "wsgi.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
+      }
     }
   ],
   "routes": [
@@ -14,17 +18,13 @@
   ],
   "env": {
     "USE_PROXY": "false",
-    "DEBUG_MODE": "false",
+    "DEBUG_MODE": "true",
     "MAX_WORKERS": "1",
     "CACHE_SIZE": "32",
     "REQUEST_TIMEOUT": "10",
     "FLASK_ENV": "production",
     "PYTHONUNBUFFERED": "1",
-    "PYTHONDONTWRITEBYTECODE": "1"
-  },
-  "functions": {
-    "wsgi.py": {
-      "maxDuration": 30
-    }
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "VERCEL": "1"
   }
 }

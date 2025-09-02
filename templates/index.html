@@ -540,6 +540,32 @@
 <body>
 <div class="wrapper">
   <div class="feed" id="videoFeed">
+    <!-- Debug info for development -->
+    <div style="color: white; padding: 20px; background: rgba(0,100,200,0.2); margin: 10px; border-radius: 5px;">
+      <h3>📊 Template Debug Info</h3>
+      <p><strong>Videos count:</strong> {{ videos|length }}</p>
+      <p><strong>Videos list:</strong> {{ videos[:1] if videos else 'Empty list' }}</p>
+      <p><strong>Current page:</strong> {{ current_page }}</p>
+      <p><strong>Query:</strong> "{{ query or 'None' }}"</p>
+      <p><strong>Proxy enabled:</strong> {{ proxy_enabled }}</p>
+      <p><strong>Debug mode:</strong> {{ debug_info is defined }}</p>
+      {% if debug_info %}
+      <details>
+        <summary>System Debug Info</summary>
+        <pre>{{ debug_info | pprint }}</pre>
+      </details>
+      {% endif %}
+      <p><a href="/test-fetch" style="color: yellow;">🧪 Test Backend Fetch</a></p>
+      <p><a href="/debug" style="color: yellow;">🔍 Full Debug Info</a></p>
+    </div>
+    
+    {% if not videos %}
+    <div style="color: white; padding: 20px; background: rgba(255,0,0,0.3); margin: 10px; border-radius: 5px;">
+      <h3>⚠️ No Videos Found</h3>
+      <p>The backend should have provided mock data as fallback. This indicates a template rendering issue.</p>
+    </div>
+    {% endif %}
+    
     {% for video in videos %}
     <div class="slide" data-url="{{ video.link }}" data-loaded="false" data-resolved="false" data-tags-loaded="false">
       <div class="video-container">
@@ -576,11 +602,12 @@
 
   <!-- Performance Indicator -->
   <div id="performanceIndicator" class="performance-indicator">
-    <div>Proxy: <span id="proxyStatus" style="color: {{ '#0f0' if proxy_enabled else '#f80' }}">{{ 'ON' if proxy_enabled else 'OFF' }}</span></div>
-    <div>Mode: <span id="currentMode">Home</span></div>
-    <div>Videos: <span id="videoCount">0</span></div>
-    <div>Page: <span id="currentPageDisplay">1</span></div>
-    <div>Requests: <span id="requestCount">0</span></div>
+    <div>🌐 Connection: <span id="connectionStatus" style="color: #0f0">Testing...</span></div>
+    <div>📡 Proxy: <span id="proxyStatus" style="color: {{ '#0f0' if proxy_enabled else '#f80' }}">{{ 'ON' if proxy_enabled else 'OFF' }}</span></div>
+    <div>🏠 Mode: <span id="currentMode">Home</span></div>
+    <div>🎬 Videos: <span id="videoCount">0</span></div>
+    <div>📄 Page: <span id="currentPageDisplay">1</span></div>
+    <div>📊 Requests: <span id="requestCount">0</span></div>
   </div>
 
   <!-- Debug Info -->
@@ -590,6 +617,8 @@
     <div>⏱️ Load Time: <span id="debugLoadTime">0ms</span></div>
     <div>❌ Errors: <span id="debugErrors">0</span></div>
     <div>🎯 Active Slides: <span id="debugActiveSlides">0</span></div>
+    <div>🐍 Python: <span id="debugPython">Unknown</span></div>
+    <div>☁️ Environment: <span id="debugEnv">Unknown</span></div>
   </div>
 
   <!-- Debug Toggle -->
@@ -906,9 +935,8 @@ function updatePerformanceIndicator() {
 
 // Enhanced error handling
 function handleRequestError(error, context) {
-  performanceStats.errorsCount++;
-  updateDebugInfo('debugErrors', performanceStats.errorsCount);
-  console.error(`[${context}] Error:`, error);
+  // Use enhanced logging
+  logError(context, error.message || error, { error: error });
   
   // Show user-friendly error message
   const indicator = document.getElementById('performanceIndicator');
@@ -933,11 +961,107 @@ window.fetch = function(...args) {
   return originalFetch.apply(this, args);
 };
 
+// Connection testing
+async function testConnection() {
+  const connectionStatus = document.getElementById('connectionStatus');
+  
+  // Check if element exists before proceeding
+  if (!connectionStatus) {
+    console.warn('⚠️ Connection status element not found, skipping connection test');
+    return;
+  }
+  
+  try {
+    connectionStatus.textContent = 'Testing...';
+    connectionStatus.style.color = '#ff0';
+    
+    // Test health endpoint
+    const healthStart = performance.now();
+    const healthResponse = await fetch('/health');
+    const healthTime = performance.now() - healthStart;
+    
+    if (healthResponse.ok) {
+      const healthData = await healthResponse.json();
+      connectionStatus.textContent = `OK (${Math.round(healthTime)}ms)`;
+      connectionStatus.style.color = '#0f0';
+      
+      // Update debug info with server data
+      if (healthData.python_version) {
+        updateDebugInfo('debugPython', healthData.python_version);
+      }
+      updateDebugInfo('debugEnv', healthData.vercel ? 'Vercel' : 'Local');
+      
+      console.log('🏥 Health check successful:', healthData);
+    } else {
+      throw new Error(`Health check failed: ${healthResponse.status}`);
+    }
+    
+    // Test debug endpoint if available
+    try {
+      const debugResponse = await fetch('/debug');
+      if (debugResponse.ok) {
+        const debugData = await debugResponse.json();
+        console.log('🔧 Debug data:', debugData);
+        
+        // Update more detailed debug info
+        if (debugData.environment) {
+          updateDebugInfo('debugPython', debugData.environment.python_version);
+          updateDebugInfo('debugEnv', debugData.environment.vercel_env ? 'Vercel' : 'Local');
+        }
+      }
+    } catch (debugError) {
+      console.log('🔧 Debug endpoint not available:', debugError.message);
+    }
+    
+  } catch (error) {
+    connectionStatus.textContent = `Failed (${error.message})`;
+    connectionStatus.style.color = '#f00';
+    console.error('❌ Connection test failed:', error);
+    
+    // Log connection failure
+    logError('connection_test', error.message, { url: '/health' });
+  }
+}
+
+// Enhanced error logging
+function logError(context, message, details = {}) {
+  performanceStats.errorsCount++;
+  updateDebugInfo('debugErrors', performanceStats.errorsCount);
+  
+  const errorLog = {
+    timestamp: new Date().toISOString(),
+    context: context,
+    message: message,
+    details: details,
+    userAgent: navigator.userAgent,
+    url: window.location.href
+  };
+  
+  console.error(`[${context}] Error:`, errorLog);
+  
+  // Store errors in localStorage for debugging
+  try {
+    const existingErrors = JSON.parse(localStorage.getItem('r34video_errors') || '[]');
+    existingErrors.push(errorLog);
+    
+    // Keep only last 10 errors
+    if (existingErrors.length > 10) {
+      existingErrors.splice(0, existingErrors.length - 10);
+    }
+    
+    localStorage.setItem('r34video_errors', JSON.stringify(existingErrors));
+  } catch (storageError) {
+    console.warn('Failed to store error log:', storageError);
+  }
+}
+
 // Debug functions
 function updateDebugInfo(elementId, value) {
   const element = document.getElementById(elementId);
   if (element) {
     element.textContent = value;
+  } else {
+    console.warn(`⚠️ Debug element '${elementId}' not found`);
   }
 }
 
@@ -948,6 +1072,22 @@ function toggleDebug() {
   
   const toggleBtn = document.getElementById('debugToggle');
   toggleBtn.textContent = isVisible ? 'Debug' : 'Hide';
+  
+  // Show stored errors when debug is toggled on
+  if (!isVisible) {
+    try {
+      const storedErrors = JSON.parse(localStorage.getItem('r34video_errors') || '[]');
+      if (storedErrors.length > 0) {
+        console.group('🔍 Stored Error Logs');
+        storedErrors.forEach((error, index) => {
+          console.log(`Error ${index + 1}:`, error);
+        });
+        console.groupEnd();
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve stored errors:', e);
+    }
+  }
 }
 
 // Function to preload tags without loading video
@@ -1277,19 +1417,50 @@ document.getElementById("loadMoreBtn").addEventListener("click", loadMoreVideos)
 
 // Error handling for debugging blank page issues
 window.addEventListener('error', function(e) {
-  console.log('Global error handler', e);
-  document.body.innerHTML = '<div style="color:red; padding: 20px;">Error loading page: ' + e.message + '</div>';
+  console.error('Global error handler', e);
+  logError('global_error', e.message, { 
+    filename: e.filename, 
+    lineno: e.lineno, 
+    colno: e.colno 
+  });
+  
+  // Only show fallback if no content exists
+  if (!document.querySelector('.slide') && !document.querySelector('#videoFeed')) {
+    document.body.innerHTML = '<div style="color:red; padding: 20px;">Error loading page: ' + e.message + '</div>';
+  }
 });
 
 // Add fallback content
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 R34Video App Loading...');
-  console.log('📊 Initial Stats:', {
+  
+  // Enhanced initial debug logging
+  const initialStats = {
     slides: document.querySelectorAll('.slide').length,
     proxyEnabled: {{ proxy_enabled | lower }},
     currentPage: currentPage,
-    performanceStats: performanceStats
+    performanceStats: performanceStats,
+    videoFeed: !!document.getElementById('videoFeed'),
+    bodyHTML: document.body.innerHTML.length,
+    debugPanel: !!document.querySelector('[style*="rgba(255,0,0,0.2)"]')
+  };
+  
+  console.log('📊 Initial Stats:', initialStats);
+  console.log('🔍 Template Data Check:', {
+    videosFromServer: {{ videos|length }},
+    hasDebugInfo: {{ 'true' if debug_info else 'false' }},
+    currentQuery: '{{ query or "None" }}',
+    currentPage: {{ current_page }}
   });
+  
+  // Log the actual HTML structure
+  const videoFeed = document.getElementById('videoFeed');
+  if (videoFeed) {
+    console.log('📺 Video Feed Content:', {
+      childrenCount: videoFeed.children.length,
+      innerHTML: videoFeed.innerHTML.substring(0, 500) + '...'
+    });
+  }
 
   // Initialize debug info
   updateDebugInfo('debugQuery', currentSearchQuery || 'None');
@@ -1314,13 +1485,27 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Check if content is actually rendering
   if (document.querySelectorAll('.slide').length === 0) {
-    console.warn('⚠️ No slides found, showing fallback');
-    document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
+    console.warn('⚠️ No slides found');
+    console.log('📊 Available debug info:', {
+      videoFeed: !!document.getElementById('videoFeed'),
+      debugInfo: !!document.querySelector('[style*="rgba(255,0,0,0.2)"]'),
+      bodyContent: document.body.innerHTML.length
+    });
+    
+    // Don't immediately replace content if there's debug info visible
+    if (!document.querySelector('[style*="rgba(255,0,0,0.2)"]')) {
+      console.warn('⚠️ No debug info found, showing generic fallback');
+      document.body.innerHTML = '<div style="color:white; padding: 20px;">No videos loaded. Please check your connection and try again.</div>';
+    }
   }
 
   // Initialize performance indicator
   updatePerformanceIndicator();
   console.log('📈 Performance indicator initialized');
+  
+  // Test connection
+  testConnection();
+  console.log('🌐 Connection test initiated');
 
   // Log data for debugging
   console.log('✅ App initialization complete');

@@ -1,7 +1,9 @@
 import os
 import logging
 from threading import Thread
-from app import app, background_cleaner
+
+# Import app first
+from app import app
 
 # Optimize for production
 if os.getenv('FLASK_ENV') == 'production':
@@ -9,12 +11,17 @@ if os.getenv('FLASK_ENV') == 'production':
     app.config['TESTING'] = False
     app.config['PROPAGATE_EXCEPTIONS'] = True
 
-# Start background cleaner for production
-Thread(target=background_cleaner, daemon=True).start()
-
 # Configure logging for production
 if not app.debug:
     logging.basicConfig(level=logging.WARNING)
+
+# Skip background threads in Vercel serverless environment
+if not os.getenv('VERCEL'):
+    try:
+        from app import background_cleaner
+        Thread(target=background_cleaner, daemon=True).start()
+    except ImportError:
+        pass  # Skip if background_cleaner not available
     
 # This is the WSGI callable
 application = app
