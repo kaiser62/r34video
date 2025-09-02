@@ -5,6 +5,7 @@ import logging
 import html
 import os
 import gc
+import sys
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -234,6 +235,27 @@ def threaded_resolve(video_page_url: str) -> dict:
         return {"streams": {}, "tags": [], "title": ""}
 
 
+def get_debug_context():
+    """Get current debug context information"""
+    try:
+        return {
+            'timestamp': time.time(),
+            'proxy_enabled': USE_PROXY,
+            'vercel_env': bool(os.getenv('VERCEL')),
+            'debug_mode': DEBUG_MODE,
+            'max_workers': MAX_WORKERS,
+            'cache_size': CACHE_SIZE,
+            'request_timeout': REQUEST_TIMEOUT,
+            'base_url': BASE_URL,
+            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            'active_futures_count': len(active_futures),
+            'flask_env': os.getenv('FLASK_ENV'),
+            'user_agent': HEADERS.get('User-Agent', ''),
+            'proxies_config': bool(PROXIES)
+        }
+    except Exception as e:
+        return {'error': f'Debug context error: {e}'}
+
 def background_cleaner(interval: int = 300):  # More frequent cleanup
     while True:
         time.sleep(interval)
@@ -249,8 +271,22 @@ def index():
     page = request.args.get("page", "1")
     query = request.args.get("q", "").strip()
     
+    # Enhanced debug logging
     logging.debug(f"[INDEX] Loading page {page}, query='{query}'")
     logging.debug(f"[CONFIG] USE_PROXY={USE_PROXY}, DEBUG_MODE={DEBUG_MODE}")
+    logging.debug(f"[ENV] VERCEL={os.getenv('VERCEL')}, FLASK_ENV={os.getenv('FLASK_ENV')}")
+    
+    # Connection debug info
+    debug_info = {
+        'proxy_enabled': USE_PROXY,
+        'vercel_env': bool(os.getenv('VERCEL')),
+        'max_workers': MAX_WORKERS,
+        'cache_size': CACHE_SIZE,
+        'request_timeout': REQUEST_TIMEOUT,
+        'base_url': BASE_URL,
+        'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        'active_threads': len(active_futures)
+    }
     
     if query:
         # Handle search functionality
@@ -274,7 +310,11 @@ def index():
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         logging.debug("[INDEX] Returning JSON response")
-        return jsonify(videos)
+        response_data = {
+            'videos': videos,
+            'debug_info': debug_info if DEBUG_MODE else None
+        }
+        return jsonify(videos)  # Keep existing format for compatibility
 
     logging.debug("[INDEX] Rendering template")
     return render_template("index.html", 
@@ -282,7 +322,8 @@ def index():
                          tags=all_tags, 
                          current_page=int(page),
                          query=query,
-                         proxy_enabled=USE_PROXY)
+                         proxy_enabled=USE_PROXY,
+                         debug_info=debug_info)
 
 
 
@@ -294,11 +335,33 @@ def resolve():
     
     if not video_url:
         logging.warning("[RESOLVE] Missing video URL")
-        return jsonify({"streams": {}, "tags": [], "title": ""}), 400
+        return jsonify({
+            "streams": {}, 
+            "tags": [], 
+            "title": "",
+            "error": "Missing video URL",
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }), 400
+    
+    try:
+        result = threaded_resolve(video_url)
+        logging.debug(f"[RESOLVE] Result: {len(result.get('streams', {}))} streams, {len(result.get('tags', []))} tags")
         
-    result = threaded_resolve(video_url)
-    logging.debug(f"[RESOLVE] Result: {len(result.get('streams', {}))} streams, {len(result.get('tags', []))} tags")
-    return jsonify(result)
+        # Add debug info if enabled
+        if DEBUG_MODE:
+            result['debug_info'] = get_debug_context()
+            result['request_url'] = video_url
+            
+        return jsonify(result)
+    except Exception as e:
+        logging.error(f"[RESOLVE] Error: {e}")
+        return jsonify({
+            "streams": {}, 
+            "tags": [], 
+            "title": "",
+            "error": str(e),
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }), 500
 
 
 @app.route("/stream")
@@ -308,7 +371,11 @@ def stream():
     
     if not video_url:
         logging.warning("[STREAM] Missing video URL")
-        return "Missing video URL", 400
+        error_response = {
+            "error": "Missing video URL",
+            "debug_info": get_debug_context() if DEBUG_MODE else None
+        }
+        return jsonify(error_response), 400
         
     video_url = html.unescape(video_url)
     headers = dict(HEADERS)
@@ -363,8 +430,18 @@ def stream():
 
 @app.route("/health")
 def health_check():
-    """Health check endpoint for Render"""
-    return {"status": "healthy", "service": "r34video-app"}, 200
+    """Health check endpoint with debug info"""
+    return {
+        "status": "healthy", 
+        "service": "r34video-app",
+        "proxy_enabled": USE_PROXY,
+        "debug_mode": DEBUG_MODE,
+        "vercel": bool(os.getenv('VERCEL')),
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "active_futures": len(active_futures),
+        "cache_size": CACHE_SIZE,
+        "max_workers": MAX_WORKERS
+    }, 200
 
 
 @app.errorhandler(404)
@@ -378,11 +455,53 @@ def not_found(error):
                          proxy_enabled=USE_PROXY), 404
 
 
+@app.route("/debug")
+def debug_info():
+    """Debug endpoint with comprehensive system information"""
+    if not DEBUG_MODE and not os.getenv('VERCEL'):
+        return {"error": "Debug mode disabled"}, 403
+    
+    import platform
+    debug_data = {
+        "timestamp": time.time(),
+        "environment": {
+            "proxy_enabled": USE_PROXY,
+            "debug_mode": DEBUG_MODE,
+            "vercel_env": bool(os.getenv('VERCEL')),
+            "flask_env": os.getenv('FLASK_ENV'),
+            "python_version": platform.python_version(),
+            "platform": platform.platform()
+        },
+        "configuration": {
+            "max_workers": MAX_WORKERS,
+            "cache_size": CACHE_SIZE,
+            "request_timeout": REQUEST_TIMEOUT,
+            "base_url": BASE_URL,
+            "proxies_enabled": bool(PROXIES)
+        },
+        "runtime_stats": {
+            "active_futures": len(active_futures),
+            "cache_info": get_html.cache_info()._asdict() if hasattr(get_html, 'cache_info') else None
+        },
+        "headers": dict(request.headers),
+        "request_info": {
+            "method": request.method,
+            "url": request.url,
+            "remote_addr": request.remote_addr,
+            "user_agent": request.user_agent.string
+        }
+    }
+    return jsonify(debug_data)
+
 @app.errorhandler(500)
 def internal_error(error):
-    """Handle 500 errors"""
+    """Handle 500 errors with debug info"""
     logging.error(f"Internal server error: {error}")
-    return {"error": "Internal server error"}, 500
+    error_response = {
+        "error": "Internal server error",
+        "debug_info": get_debug_context() if DEBUG_MODE else None
+    }
+    return jsonify(error_response), 500
 
 
 if __name__ == '__main__':
