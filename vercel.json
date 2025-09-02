@@ -20,7 +20,8 @@
     "REQUEST_TIMEOUT": "10",
     "FLASK_ENV": "production",
     "PYTHONUNBUFFERED": "1",
-    "PYTHONDONTWRITEBYTECODE": "1"
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "VERCEL": "1"
   },
   "functions": {
     "wsgi.py": {

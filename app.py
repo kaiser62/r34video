@@ -12,12 +12,12 @@ from threading import Lock, Thread
 import time
 from functools import lru_cache
 
-# Configuration
-USE_PROXY = os.getenv('USE_PROXY', 'true').lower() == 'true'
+# Configuration optimized for serverless
+USE_PROXY = os.getenv('USE_PROXY', 'false').lower() == 'true'  # Default false for serverless
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
-MAX_WORKERS = int(os.getenv('MAX_WORKERS', '2'))
-CACHE_SIZE = int(os.getenv('CACHE_SIZE', '128'))
-REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '8'))
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '1'))  # Optimized for Vercel
+CACHE_SIZE = int(os.getenv('CACHE_SIZE', '32'))   # Reduced for serverless memory limits
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '10'))  # Increased for stability
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
@@ -54,13 +54,18 @@ future_lock = Lock()
 session_pool = requests.Session()
 session_pool.headers.update(HEADERS)
 
-# Memory optimization
-def periodic_gc():
-    while True:
-        time.sleep(120)  # Run garbage collection every 2 minutes
+# Serverless-optimized memory management
+def serverless_gc():
+    """Aggressive garbage collection for serverless environments"""
+    if os.getenv('FLASK_ENV') == 'production':
         gc.collect()
-
-Thread(target=periodic_gc, daemon=True).start()
+        
+# Run GC after each request in production
+@app.after_request
+def cleanup_memory(response):
+    if os.getenv('FLASK_ENV') == 'production':
+        serverless_gc()
+    return response
 
 @lru_cache(maxsize=CACHE_SIZE)
 def get_html(url: str) -> str:
@@ -72,10 +77,13 @@ def get_html(url: str) -> str:
             proxies=PROXIES
         )
         
-        # Only write debug file in debug mode
-        if DEBUG_MODE:
-            with open("debug_page.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
+        # Skip debug file writing in serverless to avoid filesystem issues
+        if DEBUG_MODE and not os.getenv('VERCEL'):
+            try:
+                with open("debug_page.html", "w", encoding="utf-8") as f:
+                    f.write(response.text)
+            except Exception:
+                pass  # Ignore filesystem errors in serverless
 
         response.raise_for_status()
         logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
@@ -204,8 +212,12 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
 
 
 def threaded_resolve(video_page_url: str) -> dict:
+    # Simplified for serverless - direct execution for better reliability
+    if os.getenv('VERCEL') or MAX_WORKERS == 1:
+        return resolve_all_video_urls(video_page_url)
+    
+    # Original threading logic for multi-worker environments
     with future_lock:
-        # Adaptive max concurrent futures based on configuration
         if len(active_futures) >= MAX_WORKERS:
             oldest_url = next(iter(active_futures))
             logging.debug(f"[THREAD] Killing oldest thread: {oldest_url}")
@@ -320,8 +332,10 @@ def stream():
         content_type = r.headers.get("Content-Type", "video/mp4")
         logging.debug(f"[STREAM] Status: {r.status_code}, Content-Type: {content_type}")
 
+        # Optimized chunk size for Vercel serverless
+        chunk_size = 4096 if os.getenv('VERCEL') else 8192
         response = Response(
-            stream_with_context(r.iter_content(chunk_size=8192)),  # Optimized chunk size for free tier
+            stream_with_context(r.iter_content(chunk_size=chunk_size)),
             status=r.status_code,
             content_type=content_type
         )

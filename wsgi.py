@@ -9,8 +9,9 @@ if os.getenv('FLASK_ENV') == 'production':
     app.config['TESTING'] = False
     app.config['PROPAGATE_EXCEPTIONS'] = True
 
-# Start background cleaner for production
-Thread(target=background_cleaner, daemon=True).start()
+# Skip background threads in Vercel serverless environment
+if not os.getenv('VERCEL'):
+    Thread(target=background_cleaner, daemon=True).start()
 
 # Configure logging for production
 if not app.debug:
