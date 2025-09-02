@@ -1426,12 +1426,34 @@ window.addEventListener('error', function(e) {
 // Add fallback content
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 R34Video App Loading...');
-  console.log('📊 Initial Stats:', {
+  
+  // Enhanced initial debug logging
+  const initialStats = {
     slides: document.querySelectorAll('.slide').length,
     proxyEnabled: {{ proxy_enabled | lower }},
     currentPage: currentPage,
-    performanceStats: performanceStats
+    performanceStats: performanceStats,
+    videoFeed: !!document.getElementById('videoFeed'),
+    bodyHTML: document.body.innerHTML.length,
+    debugPanel: !!document.querySelector('[style*="rgba(255,0,0,0.2)"]')
+  };
+  
+  console.log('📊 Initial Stats:', initialStats);
+  console.log('🔍 Template Data Check:', {
+    videosFromServer: {{ videos|length }},
+    hasDebugInfo: {{ 'true' if debug_info else 'false' }},
+    currentQuery: '{{ query or "None" }}',
+    currentPage: {{ current_page }}
   });
+  
+  // Log the actual HTML structure
+  const videoFeed = document.getElementById('videoFeed');
+  if (videoFeed) {
+    console.log('📺 Video Feed Content:', {
+      childrenCount: videoFeed.children.length,
+      innerHTML: videoFeed.innerHTML.substring(0, 500) + '...'
+    });
+  }
 
   // Initialize debug info
   updateDebugInfo('debugQuery', currentSearchQuery || 'None');

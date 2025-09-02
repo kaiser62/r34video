@@ -23,6 +23,13 @@ REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '10'))  # Increased for stabi
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
 BASE_URL = "https://rule34video.com"
+
+# Alternative base URLs to try if main site fails
+ALTERNATIVE_URLS = [
+    "https://rule34video.com",
+    "https://www.rule34video.com", 
+    "http://rule34video.com"
+]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -33,6 +40,12 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
+    "DNT": "1",
+    "Sec-Fetch-Dest": "document", 
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
 }
 
 PROXIES = {
@@ -55,6 +68,28 @@ future_lock = Lock()
 session_pool = requests.Session()
 session_pool.headers.update(HEADERS)
 
+# Configure session for better reliability
+session_pool.verify = True  # SSL verification
+session_pool.timeout = REQUEST_TIMEOUT
+session_pool.max_redirects = 5
+
+# Add retry strategy for better reliability
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "OPTIONS"]
+)
+
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session_pool.mount("http://", adapter)
+session_pool.mount("https://", adapter)
+
+logging.warning(f"🔧 [INIT] Session configured with {REQUEST_TIMEOUT}s timeout and retry strategy")
+
 # Serverless-optimized memory management
 def serverless_gc():
     """Aggressive garbage collection for serverless environments"""
@@ -70,7 +105,10 @@ def cleanup_memory(response):
 
 @lru_cache(maxsize=CACHE_SIZE)
 def get_html(url: str) -> str:
-    logging.debug(f"Fetching HTML from: {url}")
+    logging.warning(f"🌐 [GET_HTML] Starting fetch from: {url}")
+    logging.warning(f"🔧 [GET_HTML] Config - USE_PROXY={USE_PROXY}, PROXIES={PROXIES}")
+    logging.warning(f"🔧 [GET_HTML] Timeout: {REQUEST_TIMEOUT}s, Headers: {HEADERS['User-Agent'][:50]}...")
+    
     try:
         response = session_pool.get(
             url, 
@@ -78,19 +116,39 @@ def get_html(url: str) -> str:
             proxies=PROXIES
         )
         
+        logging.warning(f"📡 [GET_HTML] Response status: {response.status_code}")
+        logging.warning(f"📏 [GET_HTML] Response length: {len(response.text)} chars")
+        logging.warning(f"📄 [GET_HTML] Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+        
+        # Log first 500 chars for debugging
+        if DEBUG_MODE:
+            preview = response.text[:500].replace('\n', ' ').replace('\r', '')
+            logging.warning(f"👁️ [GET_HTML] HTML Preview: {preview}...")
+        
         # Skip debug file writing in serverless to avoid filesystem issues
         if DEBUG_MODE and not os.getenv('VERCEL'):
             try:
                 with open("debug_page.html", "w", encoding="utf-8") as f:
                     f.write(response.text)
-            except Exception:
-                pass  # Ignore filesystem errors in serverless
+                logging.warning(f"💾 [GET_HTML] Saved debug file")
+            except Exception as write_error:
+                logging.warning(f"💾 [GET_HTML] Could not save debug file: {write_error}")
 
         response.raise_for_status()
-        logging.debug(f"HTML fetched successfully: {len(response.text)} characters")
+        logging.warning(f"✅ [GET_HTML] Successfully fetched {len(response.text)} characters")
         return response.text
+        
+    except requests.exceptions.Timeout as e:
+        logging.error(f"⏰ [GET_HTML] Timeout error after {REQUEST_TIMEOUT}s: {e}")
+        return ""
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"🔌 [GET_HTML] Connection error: {e}")
+        return ""
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"🚫 [GET_HTML] HTTP error: {e} (Status: {response.status_code if 'response' in locals() else 'Unknown'})")
+        return ""
     except Exception as e:
-        logging.error(f"Failed to fetch HTML: {e}")
+        logging.error(f"❌ [GET_HTML] Unexpected error: {type(e).__name__}: {e}")
         return ""
 
 
@@ -109,15 +167,67 @@ def extract_popular_tags(html_text: str) -> list[str]:
 
 
 def extract_videos(html_text: str) -> list[dict]:
-    logging.debug("Extracting videos from HTML...")
+    logging.warning(f"🎬 [EXTRACT_VIDEOS] Starting extraction from {len(html_text)} chars of HTML")
+    
+    if not html_text:
+        logging.error(f"❌ [EXTRACT_VIDEOS] No HTML content provided")
+        return []
+    
     soup = BeautifulSoup(html_text, "html.parser")
-    video_items = soup.select("div.item.thumb")
+    
+    # Try different selectors to find video items
+    selectors_to_try = [
+        "div.item.thumb",
+        ".item.thumb",
+        "div.item",
+        ".item",
+        "div.thumb",
+        ".video-item",
+        "article",
+        "div[class*='item']",
+        "div[class*='thumb']",
+        "div[class*='video']"
+    ]
+    
+    video_items = []
+    for selector in selectors_to_try:
+        video_items = soup.select(selector)
+        logging.warning(f"🔍 [EXTRACT_VIDEOS] Selector '{selector}': found {len(video_items)} items")
+        if video_items:
+            break
+    
+    if not video_items:
+        logging.error(f"❌ [EXTRACT_VIDEOS] No video items found with any selector")
+        # Log some of the HTML structure for debugging
+        all_divs = soup.select("div")
+        logging.warning(f"📋 [EXTRACT_VIDEOS] Total divs found: {len(all_divs)}")
+        if all_divs:
+            sample_classes = [div.get('class', []) for div in all_divs[:10]]
+            logging.warning(f"📋 [EXTRACT_VIDEOS] Sample div classes: {sample_classes}")
+        return []
 
+    logging.warning(f"📦 [EXTRACT_VIDEOS] Processing {len(video_items)} video items")
     videos = []
-    for item in video_items:
-        link_tag = item.select_one('a.js-open-popup[href*="/video/"]')
+    for i, item in enumerate(video_items):
+        # Try different link selectors
+        link_selectors = [
+            'a.js-open-popup[href*="/video/"]',
+            'a[href*="/video/"]',
+            'a.js-open-popup',
+            'a',
+            '[href*="/video/"]'
+        ]
+        
+        link_tag = None
+        for link_selector in link_selectors:
+            link_tag = item.select_one(link_selector)
+            if link_tag:
+                logging.warning(f"🔗 [EXTRACT_VIDEOS] Item {i}: Found link with selector '{link_selector}'")
+                break
+        
         if not link_tag:
-            continue  # skip non-video blocks
+            logging.warning(f"⚠️ [EXTRACT_VIDEOS] Item {i}: No link found, skipping")
+            continue
 
         href = link_tag['href']
         full_link = urljoin(BASE_URL, href)
@@ -137,14 +247,14 @@ def extract_videos(html_text: str) -> list[dict]:
             if alt_thumbnail:
                 thumbnail = alt_thumbnail.get("src") or alt_thumbnail.get("data-src") or alt_thumbnail.get("data-original") or ""
         
-        logging.debug(f"[VIDEO] Extracted thumbnail for {video_id}: {thumbnail}")
+        logging.warning(f"🖼️ [EXTRACT_VIDEOS] Item {i} (ID: {video_id}): thumbnail='{thumbnail[:100] if thumbnail else 'None'}...'")
 
         duration_tag = item.select_one(".time")
         duration = duration_tag.text.strip() if duration_tag else ""
 
         is_hd = "HD" if item.select_one(".quality") else ""
 
-        videos.append({
+        video_data = {
             "id": video_id,
             "link": full_link,
             "thumbnail": thumbnail,
@@ -152,9 +262,11 @@ def extract_videos(html_text: str) -> list[dict]:
             "is_hd": is_hd,
             "duration": duration,
             "tags": [],
-        })
+        }
+        videos.append(video_data)
+        logging.warning(f"✅ [EXTRACT_VIDEOS] Item {i}: Successfully extracted video '{title[:50]}...' (ID: {video_id})")
 
-    logging.debug(f"Returning {len(videos)} videos")
+    logging.warning(f"🎯 [EXTRACT_VIDEOS] Final result: {len(videos)} videos extracted")
     return videos
 
 
@@ -289,9 +401,12 @@ def index():
     }
     
     try:
+        logging.warning(f"🏠 [INDEX] Starting request: page={page}, query='{query}'")
+        logging.warning(f"🔧 [INDEX] Current config: proxy={USE_PROXY}, debug={DEBUG_MODE}, workers={MAX_WORKERS}")
+        
         if query:
             # Handle search functionality
-            logging.debug(f"[SEARCH] Query='{query}', Page={page}")
+            logging.warning(f"🔍 [SEARCH] Query='{query}', Page={page}")
             formatted_query = query.replace(" ", "-")
             search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
             logging.debug(f"[SEARCH] Search URL: {search_url}")
@@ -308,12 +423,32 @@ def index():
             
             logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
         else:
-            # Handle normal home page
-            home_url = f"{BASE_URL}/latest-updates/{page}/"
-            logging.debug(f"[INDEX] Fetching from: {home_url}")
+            # Try multiple home page URLs
+            home_urls_to_try = [
+                f"{BASE_URL}/latest-updates/{page}/",
+                f"{BASE_URL}/latest/{page}/", 
+                f"{BASE_URL}/page/{page}/",
+                f"{BASE_URL}/latest-updates/",
+                f"{BASE_URL}/",
+                f"{BASE_URL}/videos/",
+                f"{BASE_URL}/newest/"
+            ]
             
-            html_text = get_html(home_url)
-            logging.debug(f"[INDEX] HTML length: {len(html_text)} chars")
+            html_text = ""
+            successful_url = None
+            
+            for home_url in home_urls_to_try:
+                logging.warning(f"🏠 [INDEX] Trying URL: {home_url}")
+                html_text = get_html(home_url)
+                if html_text and len(html_text) > 1000:  # Reasonable minimum size
+                    successful_url = home_url
+                    logging.warning(f"✅ [INDEX] Success with URL: {home_url} ({len(html_text)} chars)")
+                    break
+                else:
+                    logging.warning(f"❌ [INDEX] Failed/small response from: {home_url} ({len(html_text)} chars)")
+            
+            if not successful_url:
+                logging.error(f"💥 [INDEX] All home URLs failed!")
             
             if not html_text:
                 logging.error(f"[INDEX] No HTML content received from {home_url}")
@@ -325,8 +460,34 @@ def index():
             logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
             
     except Exception as e:
-        logging.error(f"[INDEX] Error fetching content: {e}")
+        logging.error(f"💥 [INDEX] Error fetching content: {e}")
         videos, all_tags = [], []
+        
+        # Try mock data as absolute fallback for testing
+        if DEBUG_MODE and not videos:
+            logging.warning("🧪 [INDEX] Adding mock data for testing")
+            videos = [
+                {
+                    "id": "mock1",
+                    "link": f"{BASE_URL}/video/mock1/test-video-1/",
+                    "thumbnail": "https://via.placeholder.com/300x200/333/fff?text=Test+Video+1",
+                    "title": "Test Video 1 (Mock Data)",
+                    "is_hd": "HD",
+                    "duration": "5:00",
+                    "tags": ["test", "mock", "debug"]
+                },
+                {
+                    "id": "mock2", 
+                    "link": f"{BASE_URL}/video/mock2/test-video-2/",
+                    "thumbnail": "https://via.placeholder.com/300x200/666/fff?text=Test+Video+2",
+                    "title": "Test Video 2 (Mock Data)",
+                    "is_hd": "",
+                    "duration": "3:30", 
+                    "tags": ["test", "debug"]
+                }
+            ]
+            all_tags = ["test", "mock", "debug", "placeholder"]
+            logging.warning(f"🧪 [INDEX] Mock data created: {len(videos)} videos")
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         logging.debug("[INDEX] Returning JSON response")
