@@ -1,0 +1,29 @@
+services:
+  r34video-flask:
+    build: .
+    container_name: r34video-flask
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - tags_data:/app/data
+    environment:
+      - TAGS_DB_PATH=/app/data/tags.db
+    ports:
+      - "127.0.0.1:3002:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - vmess_network
+
+volumes:
+  tags_data:
+
+networks:
+  vmess_network:
+    external: true
+    name: new-test_vmess_network
