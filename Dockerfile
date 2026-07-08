@@ -10,4 +10,4 @@ COPY . .
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--worker-class", "sync", "--timeout", "120", "--keep-alive", "30", "--max-requests", "500", "wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "gevent", "--worker-connections", "100", "--timeout", "120", "--keep-alive", "30", "--max-requests", "500", "wsgi:application"]

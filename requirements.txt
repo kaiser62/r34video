@@ -3,3 +3,4 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 gunicorn==21.2.0
 Werkzeug==2.3.7
+gevent==24.2.1

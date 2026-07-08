@@ -6,7 +6,7 @@ import html
 import os
 import gc
 import sqlite3
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, Future
 from threading import Lock, Thread
@@ -26,6 +26,7 @@ TAGS_DB_PATH = os.getenv('TAGS_DB_PATH', 'tags.db')
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
 BASE_URL = "https://rule34video.com"
+ALLOWED_HOSTS = {"rule34video.com", "www.rule34video.com"}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -68,6 +69,9 @@ def get_db():
 
 def init_tag_db():
     with _tag_db_lock, get_db() as conn:
+        # WAL allows concurrent readers alongside a writer, needed once >1 gunicorn worker
+        # process (or many gevent greenlets) touch this file at once.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("CREATE TABLE IF NOT EXISTS tag_counts (tag TEXT PRIMARY KEY, count INTEGER DEFAULT 0)")
         conn.execute("CREATE TABLE IF NOT EXISTS video_tags (video_id TEXT, tag TEXT, PRIMARY KEY(video_id, tag))")
         # Videos whose *complete* tag list has been scraped (via resolve), as opposed to
@@ -139,6 +143,16 @@ def extract_video_id_from_url(url: str):
         return url.strip("/").split("/")[-2]
     except Exception:
         return None
+
+
+def is_allowed_url(url: str) -> bool:
+    """Only allow fetching/proxying URLs on the source site's own host, to prevent
+    /resolve and /stream from being used as an open SSRF proxy."""
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and parsed.hostname in ALLOWED_HOSTS
+    except Exception:
+        return False
 
 
 def parse_query(q: str):
@@ -328,22 +342,19 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
 
 
 def threaded_resolve(video_page_url: str) -> dict:
+    # ThreadPoolExecutor already caps concurrency at MAX_WORKERS and queues the
+    # rest; no need to cancel someone else's in-flight resolve to make room.
+    future = executor.submit(resolve_all_video_urls, video_page_url)
     with future_lock:
-        # Adaptive max concurrent futures based on configuration
-        if len(active_futures) >= MAX_WORKERS:
-            oldest_url = next(iter(active_futures))
-            logging.debug(f"[THREAD] Killing oldest thread: {oldest_url}")
-            active_futures[oldest_url].cancel()
-            del active_futures[oldest_url]
-
-        future = executor.submit(resolve_all_video_urls, video_page_url)
         active_futures[video_page_url] = future
-
     try:
         return future.result(timeout=REQUEST_TIMEOUT + 2)
     except Exception as e:
         logging.error(f"[THREAD ERROR] {e}")
         return {"streams": {}, "tags": [], "title": ""}
+    finally:
+        with future_lock:
+            active_futures.pop(video_page_url, None)
 
 
 def background_cleaner(interval: int = 300):  # More frequent cleanup
@@ -523,7 +534,11 @@ def resolve():
     if not video_url:
         logging.warning("[RESOLVE] Missing video URL")
         return jsonify({"streams": {}, "tags": [], "title": ""}), 400
-        
+
+    if not is_allowed_url(video_url):
+        logging.warning(f"[RESOLVE] Rejected disallowed host: {video_url}")
+        return jsonify({"streams": {}, "tags": [], "title": ""}), 400
+
     result = threaded_resolve(video_url)
     logging.debug(f"[RESOLVE] Result: {len(result.get('streams', {}))} streams, {len(result.get('tags', []))} tags")
     return jsonify(result)
@@ -537,8 +552,13 @@ def stream():
     if not video_url:
         logging.warning("[STREAM] Missing video URL")
         return "Missing video URL", 400
-        
+
     video_url = html.unescape(video_url)
+
+    if not is_allowed_url(video_url):
+        logging.warning(f"[STREAM] Rejected disallowed host: {video_url}")
+        return "URL not allowed", 400
+
     headers = dict(HEADERS)
     range_header = request.headers.get("Range")
 
