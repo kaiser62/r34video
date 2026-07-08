@@ -70,6 +70,9 @@ def init_tag_db():
     with _tag_db_lock, get_db() as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS tag_counts (tag TEXT PRIMARY KEY, count INTEGER DEFAULT 0)")
         conn.execute("CREATE TABLE IF NOT EXISTS video_tags (video_id TEXT, tag TEXT, PRIMARY KEY(video_id, tag))")
+        # Videos whose *complete* tag list has been scraped (via resolve), as opposed to
+        # video_tags rows seeded from a single category listing, which only prove one tag.
+        conn.execute("CREATE TABLE IF NOT EXISTS resolved_videos (video_id TEXT PRIMARY KEY)")
         conn.commit()
 
 
@@ -105,6 +108,18 @@ def get_video_tags(video_id: str) -> set:
     with _tag_db_lock, get_db() as conn:
         rows = conn.execute("SELECT tag FROM video_tags WHERE video_id = ?", (video_id,)).fetchall()
     return {r[0] for r in rows}
+
+
+def mark_resolved(video_id: str):
+    with _tag_db_lock, get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO resolved_videos(video_id) VALUES (?)", (video_id,))
+        conn.commit()
+
+
+def is_fully_resolved(video_id: str) -> bool:
+    with _tag_db_lock, get_db() as conn:
+        row = conn.execute("SELECT 1 FROM resolved_videos WHERE video_id = ?", (video_id,)).fetchone()
+    return row is not None
 
 
 def suggest_tags(prefix: str, limit: int = 15) -> list[str]:
@@ -298,8 +313,9 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
         title = title_element.text.strip() if title_element else ""
 
         video_id = extract_video_id_from_url(video_page_url)
-        if tags and video_id:
+        if video_id and html_page:
             index_tags(tags, video_id=video_id)
+            mark_resolved(video_id)
 
         return {
             "streams": urls,
@@ -372,10 +388,13 @@ def filter_excluded(candidates: list, exclude: list) -> list:
 
     for v in candidates:
         cached = get_video_tags(v["id"])
-        if cached:
-            if not (cached & exclude_set):
-                kept.append(v)
+        if cached & exclude_set:
+            continue  # definitely has an excluded tag, drop without resolving
+        if is_fully_resolved(v["id"]):
+            kept.append(v)  # complete tag list known, and it doesn't overlap exclude_set
         else:
+            # cache (if any) is only a partial tag list (e.g. seeded from one category
+            # listing) — not enough to prove absence of an excluded tag, must resolve
             need_resolve.append(v)
 
     if need_resolve:
