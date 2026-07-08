@@ -27,6 +27,26 @@ app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
 BASE_URL = "https://rule34video.com"
 ALLOWED_HOSTS = {"rule34video.com", "www.rule34video.com"}
+# The Next.js frontend (r34.basic.int.eu.org) calls this API's JSON endpoints
+# cross-origin. /stream sets its own wildcard CORS header separately since
+# video bytes carry no per-user data.
+CORS_ORIGINS = {
+    "https://r34.basic.int.eu.org",
+    "https://e34.basic.int.eu.org",
+    "http://localhost:3000",
+}
+
+
+@app.after_request
+def add_cors_headers(response):
+    if "Access-Control-Allow-Origin" not in response.headers:
+        origin = request.headers.get("Origin")
+        if origin in CORS_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Requested-With"
+    return response
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
