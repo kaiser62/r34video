@@ -369,6 +369,36 @@
       gap: 5px;
     }
 
+    .suggest-box {
+      position: fixed;
+      top: 44px;
+      right: 10px;
+      z-index: 1001;
+      width: 200px;
+      background: rgba(20, 20, 20, 0.95);
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .suggest-item {
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: white;
+      cursor: pointer;
+    }
+
+    .suggest-item:hover, .suggest-item.active {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .suggest-item.exclude {
+      color: #ff8080;
+    }
+
     .search-input {
       padding: 8px 12px;
       border: none;
@@ -557,7 +587,7 @@
         <p>{{ video.duration }} {{ video.is_hd }}</p>
         <div class="video-tags">
           {% for tag in video.tags %}
-          <span onclick="event.preventDefault(); searchForTag('{{ tag|replace("'", "\\'") }}')">{{ tag }}</span>
+          <span onclick="event.preventDefault(); searchForTag('{{ tag|replace("'", "\\'") }}')" oncontextmenu="event.preventDefault(); searchForTag('{{ tag|replace("'", "\\'") }}', true);" title="Click to include, right-click to exclude">{{ tag }}</span>
           {% endfor %}
         </div>
         <div class="controls-row">
@@ -597,10 +627,11 @@
 
   <!-- Search Container -->
   <div class="search-container">
-    <input type="text" id="searchInput" class="search-input" placeholder="Search videos..." />
+    <input type="text" id="searchInput" class="search-input" placeholder="tag1 tag2 -tag3..." autocomplete="off" title="Space-separated tags. Prefix with - to exclude." />
     <button id="searchBtn" class="search-btn">🔍</button>
     <button id="homeBtn" class="home-btn" onclick="goHome()" style="display: none;">🏠</button>
   </div>
+  <div id="suggestBox" class="suggest-box"></div>
 </div>
 
 <script>
@@ -618,13 +649,12 @@ let isSearchMode = {{ 'true' if query else 'false' }};
 // Performance monitoring
 const startTime = performance.now();
 
-// Perform search function
-function performSearch() {
-  const searchInput = document.getElementById('searchInput');
+// Core search runner, shared by the search box, tag clicks, and suggestion picks
+function runSearch(query) {
   const searchBtn = document.getElementById('searchBtn');
   const homeBtn = document.getElementById('homeBtn');
-  
-  const query = searchInput.value.trim();
+
+  query = query.trim();
   if (!query) return;
 
   console.log('🔍 Starting search for:', query);
@@ -632,19 +662,16 @@ function performSearch() {
   isSearchMode = true;
   currentPage = 1;
 
-  // Update UI
   homeBtn.style.display = 'block';
   searchBtn.innerHTML = '<div class="loader"></div>';
   searchBtn.disabled = true;
 
-  // Clear current videos
   const feed = document.getElementById('videoFeed');
   feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Searching for: ' + query + '</div>';
 
-  // Perform search
   const searchUrl = `/?q=${encodeURIComponent(query)}&page=1`;
   console.log('📡 Fetching:', searchUrl);
-  
+
   fetch(searchUrl, {
     headers: { "X-Requested-With": "XMLHttpRequest" }
   })
@@ -654,7 +681,7 @@ function performSearch() {
   })
   .then(videos => {
     console.log('📊 Search results:', videos.length, 'videos found');
-    
+
     if (!videos || videos.length === 0) {
       console.warn('⚠️ No search results found');
       feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No videos found for: ' + query + '</div>';
@@ -665,13 +692,11 @@ function performSearch() {
 
     renderVideos(videos, true); // Clear feed and render new videos
     console.log('✅ Search results rendered');
-    
-    // Update debug info
+
     updateDebugInfo('debugQuery', query);
     updateDebugInfo('currentMode', 'Search');
     updateDebugInfo('currentPageDisplay', currentPage);
-    
-    // Update load more button for search
+
     const loadMoreBtn = document.getElementById('loadMoreBtn');
     loadMoreBtn.textContent = 'Load More Results';
   })
@@ -687,19 +712,88 @@ function performSearch() {
   });
 }
 
+// Perform search from the search box
+function performSearch() {
+  const searchInput = document.getElementById('searchInput');
+  hideSuggestions();
+  runSearch(searchInput.value);
+}
+
+// Add a tag to the current search box (include by default, exclude if requested), then search
+function searchForTag(tag, exclude = false) {
+  const searchInput = document.getElementById('searchInput');
+  const cleanTag = tag.trim().toLowerCase().replace(/\s+/g, '-');
+  const token = (exclude ? '-' : '') + cleanTag;
+
+  const tokens = searchInput.value.trim() ? searchInput.value.trim().split(/\s+/) : [];
+  if (!tokens.includes(token)) tokens.push(token);
+  searchInput.value = tokens.join(' ');
+
+  runSearch(searchInput.value);
+}
+
+// Tag-suggestion autocomplete, driven by our own /api/tags/suggest index
+let suggestDebounce;
+
+function hideSuggestions() {
+  const box = document.getElementById('suggestBox');
+  if (box) box.style.display = 'none';
+}
+
+function showSuggestions(tags, isExclude) {
+  const box = document.getElementById('suggestBox');
+  if (!box || !tags.length) { hideSuggestions(); return; }
+
+  box.innerHTML = tags.map(t =>
+    `<div class="suggest-item${isExclude ? ' exclude' : ''}" data-tag="${t}">${isExclude ? '-' : ''}${t}</div>`
+  ).join('');
+  box.style.display = 'block';
+
+  box.querySelectorAll('.suggest-item').forEach(el => {
+    el.onclick = () => {
+      const searchInput = document.getElementById('searchInput');
+      const words = searchInput.value.split(/\s+/);
+      words[words.length - 1] = (isExclude ? '-' : '') + el.dataset.tag;
+      searchInput.value = words.join(' ') + ' ';
+      hideSuggestions();
+      searchInput.focus();
+    };
+  });
+}
+
 // Search functionality
 function initializeSearch() {
   const searchInput = document.getElementById('searchInput');
   const searchBtn = document.getElementById('searchBtn');
 
-  // Handle search input
   searchInput.addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
       performSearch();
     }
   });
 
-  // Handle search button click
+  searchInput.addEventListener('input', function() {
+    clearTimeout(suggestDebounce);
+    suggestDebounce = setTimeout(() => {
+      const val = searchInput.value;
+      const words = val.split(/\s+/);
+      const last = words[words.length - 1] || '';
+      const isExclude = last.startsWith('-');
+      const partial = isExclude ? last.slice(1) : last;
+
+      if (partial.length < 2) { hideSuggestions(); return; }
+
+      fetch(`/api/tags/suggest?q=${encodeURIComponent(partial)}`)
+        .then(res => res.json())
+        .then(tags => showSuggestions(tags, isExclude))
+        .catch(() => hideSuggestions());
+    }, 200);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target !== searchInput) hideSuggestions();
+  });
+
   searchBtn.addEventListener('click', performSearch);
 }
 
@@ -775,7 +869,7 @@ function renderVideos(videos, clearFeed = false) {
         <h3>${video.title || 'Untitled Video'}</h3>
         <p>${video.duration || ''} ${video.is_hd || ''}</p>
         <div class="video-tags">
-          ${(video.tags || []).map(tag => `<span onclick="event.preventDefault(); event.stopPropagation(); searchForTag('${tag.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')">${tag}</span>`).join("")}
+          ${(video.tags || []).map(tag => `<span onclick="event.preventDefault(); event.stopPropagation(); searchForTag('${tag.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" oncontextmenu="event.preventDefault(); event.stopPropagation(); searchForTag('${tag.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', true)" title="Click to include, right-click to exclude">${tag}</span>`).join("")}
         </div>
         <div class="controls-row">
           <select class="resolution-selector"><option>Loading...</option></select>
@@ -809,62 +903,6 @@ function renderVideos(videos, clearFeed = false) {
   });
   
   updateDebugInfo('debugActiveSlides', feed.children.length);
-}
-
-// Search for a specific tag
-function searchForTag(tag) {
-  const searchInput = document.getElementById('searchInput');
-  searchInput.value = tag;
-  
-  // Trigger search
-  currentSearchQuery = tag;
-  isSearchMode = true;
-  currentPage = 1;
-
-  const homeBtn = document.getElementById('homeBtn');
-  const searchBtn = document.getElementById('searchBtn');
-  
-  // Update UI
-  homeBtn.style.display = 'block';
-  searchBtn.innerHTML = '<div class="loader"></div>';
-  searchBtn.disabled = true;
-
-  // Clear current videos
-  const feed = document.getElementById('videoFeed');
-  feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">Searching for: ' + tag + '</div>';
-
-  // Perform search
-  fetch(`/?q=${encodeURIComponent(tag)}&page=1`, {
-    headers: { "X-Requested-With": "XMLHttpRequest" }
-  })
-  .then(res => res.json())
-  .then(videos => {
-    if (!videos || videos.length === 0) {
-      feed.innerHTML = '<div style="color: white; padding: 20px; text-align: center;">No videos found for: ' + tag + '</div>';
-      updateDebugInfo('debugQuery', tag);
-      updateDebugInfo('videoCount', 0);
-      return;
-    }
-
-    renderVideos(videos, true); // Clear feed and render search results
-    
-    // Update debug info
-    updateDebugInfo('debugQuery', tag);
-    updateDebugInfo('currentMode', 'Tag Search');
-    updateDebugInfo('currentPageDisplay', currentPage);
-    
-    // Update load more button for search
-    const loadMoreBtn = document.getElementById('loadMoreBtn');
-    loadMoreBtn.textContent = 'Load More Results';
-  })
-  .catch(err => {
-    handleRequestError(err, 'tag search');
-    feed.innerHTML = '<div style="color: red; padding: 20px; text-align: center;">Search failed. Please try again.</div>';
-  })
-  .finally(() => {
-    searchBtn.innerHTML = '🔍';
-    searchBtn.disabled = false;
-  });
 }
 
 // Handle thumbnail loading success
@@ -1025,7 +1063,9 @@ function renderTags(tagBox, tags) {
     shown.forEach(tag => {
       const span = document.createElement('span');
       span.textContent = tag;
+      span.title = 'Click to include, right-click to exclude';
       span.onclick = () => searchForTag(tag);
+      span.oncontextmenu = (e) => { e.preventDefault(); searchForTag(tag, true); };
       tagBox.appendChild(span);
     });
     if (tags.length > maxVisible) {

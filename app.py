@@ -5,6 +5,7 @@ import logging
 import html
 import os
 import gc
+import sqlite3
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -18,6 +19,9 @@ DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
 MAX_WORKERS = int(os.getenv('MAX_WORKERS', '2'))
 CACHE_SIZE = int(os.getenv('CACHE_SIZE', '128'))
 REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '8'))
+MULTI_TAG_PAGES = int(os.getenv('MULTI_TAG_PAGES', '3'))
+MULTI_TAG_CACHE_TTL = int(os.getenv('MULTI_TAG_CACHE_TTL', '300'))
+TAGS_DB_PATH = os.getenv('TAGS_DB_PATH', 'tags.db')
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False  # Faster JSON serialization
@@ -53,6 +57,96 @@ future_lock = Lock()
 # Session pooling for better connection reuse
 session_pool = requests.Session()
 session_pool.headers.update(HEADERS)
+
+# --- Tag index (sqlite, persists known tags for autocomplete + exclusion filtering) ---
+_tag_db_lock = Lock()
+
+
+def get_db():
+    return sqlite3.connect(TAGS_DB_PATH, timeout=10)
+
+
+def init_tag_db():
+    with _tag_db_lock, get_db() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS tag_counts (tag TEXT PRIMARY KEY, count INTEGER DEFAULT 0)")
+        conn.execute("CREATE TABLE IF NOT EXISTS video_tags (video_id TEXT, tag TEXT, PRIMARY KEY(video_id, tag))")
+        conn.commit()
+
+
+init_tag_db()
+
+
+def slugify_tag(tag: str) -> str:
+    return re.sub(r"\s+", "-", tag.strip().lower())
+
+
+def index_tags(tags, video_id=None):
+    if not tags:
+        return
+    with _tag_db_lock, get_db() as conn:
+        for raw in tags:
+            tag = slugify_tag(raw)
+            if not tag:
+                continue
+            conn.execute(
+                "INSERT INTO tag_counts(tag, count) VALUES (?, 1) "
+                "ON CONFLICT(tag) DO UPDATE SET count = count + 1",
+                (tag,),
+            )
+            if video_id:
+                conn.execute(
+                    "INSERT OR IGNORE INTO video_tags(video_id, tag) VALUES (?, ?)",
+                    (video_id, tag),
+                )
+        conn.commit()
+
+
+def get_video_tags(video_id: str) -> set:
+    with _tag_db_lock, get_db() as conn:
+        rows = conn.execute("SELECT tag FROM video_tags WHERE video_id = ?", (video_id,)).fetchall()
+    return {r[0] for r in rows}
+
+
+def suggest_tags(prefix: str, limit: int = 15) -> list[str]:
+    prefix = slugify_tag(prefix)
+    if not prefix:
+        return []
+    with _tag_db_lock, get_db() as conn:
+        rows = conn.execute(
+            "SELECT tag FROM tag_counts WHERE tag LIKE ? ORDER BY count DESC, tag ASC LIMIT ?",
+            (prefix + "%", limit),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def extract_video_id_from_url(url: str):
+    try:
+        return url.strip("/").split("/")[-2]
+    except Exception:
+        return None
+
+
+def parse_query(q: str):
+    """Split a query string into include tags and exclude tags (prefixed with '-')."""
+    tokens = q.strip().split()
+    include, exclude = [], []
+    for t in tokens:
+        if not t:
+            continue
+        if t.startswith("-") and len(t) > 1:
+            exclude.append(slugify_tag(t[1:]))
+        else:
+            include.append(slugify_tag(t))
+    return include, exclude
+
+
+def seed_tag_index():
+    try:
+        html_text = get_html(f"{BASE_URL}/latest-updates/1/")
+        index_tags(extract_popular_tags(html_text))
+    except Exception as e:
+        logging.error(f"[SEED] Failed to seed tag index: {e}")
+
 
 # Memory optimization
 def periodic_gc():
@@ -193,6 +287,10 @@ def resolve_all_video_urls(video_page_url: str) -> dict:
         title_element = soup.select_one(".title_video, h1.title, h1")
         title = title_element.text.strip() if title_element else ""
 
+        video_id = extract_video_id_from_url(video_page_url)
+        if tags and video_id:
+            index_tags(tags, video_id=video_id)
+
         return {
             "streams": urls,
             "tags": tags,
@@ -232,6 +330,107 @@ def background_cleaner(interval: int = 300):  # More frequent cleanup
                 del active_futures[url]
 
 
+Thread(target=seed_tag_index, daemon=True).start()
+
+
+# --- Multi-tag AND search with '-tag' exclusion ---
+_multi_tag_cache = {}
+_multi_tag_cache_lock = Lock()
+
+
+def fetch_tag_candidates(tag: str, pages: int = MULTI_TAG_PAGES) -> dict:
+    """Fetch up to `pages` of a tag's exact category listing; return {video_id: video_dict}."""
+    result = {}
+    for p in range(1, pages + 1):
+        url = f"{BASE_URL}/categories/{tag}/" if p == 1 else f"{BASE_URL}/categories/{tag}/{p}/"
+        html_text = get_html(url)
+        if not html_text:
+            break
+        vids = extract_videos(html_text)
+        if not vids:
+            break
+        for v in vids:
+            result[v["id"]] = v
+            index_tags([tag], video_id=v["id"])
+    return result
+
+
+def filter_excluded(candidates: list, exclude: list) -> list:
+    exclude_set = set(exclude)
+    kept = []
+    need_resolve = []
+
+    for v in candidates:
+        cached = get_video_tags(v["id"])
+        if cached:
+            if not (cached & exclude_set):
+                kept.append(v)
+        else:
+            need_resolve.append(v)
+
+    if need_resolve:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = {ex.submit(resolve_all_video_urls, v["link"]): v for v in need_resolve}
+            for fut, v in futures.items():
+                try:
+                    data = fut.result(timeout=REQUEST_TIMEOUT + 2)
+                    tags = {slugify_tag(t) for t in data.get("tags", [])}
+                    if not (tags & exclude_set):
+                        kept.append(v)
+                except Exception as e:
+                    logging.error(f"[EXCLUDE-CHECK] Failed for {v.get('link')}: {e}")
+
+    return kept
+
+
+def multi_tag_search(include: list, exclude: list) -> list:
+    if not include:
+        return []
+
+    with ThreadPoolExecutor(max_workers=min(len(include), MAX_WORKERS + 2)) as ex:
+        futures = {ex.submit(fetch_tag_candidates, tag): tag for tag in include}
+        per_tag_results = {}
+        for fut, tag in futures.items():
+            try:
+                per_tag_results[tag] = fut.result(timeout=REQUEST_TIMEOUT * MULTI_TAG_PAGES + 5)
+            except Exception as e:
+                logging.error(f"[MULTI-TAG] Failed fetching tag '{tag}': {e}")
+                per_tag_results[tag] = {}
+
+    id_sets = [set(v.keys()) for v in per_tag_results.values()]
+    common_ids = set.intersection(*id_sets) if id_sets and all(id_sets) else set()
+
+    merged = {}
+    for tag_results in per_tag_results.values():
+        for vid, data in tag_results.items():
+            if vid in common_ids and vid not in merged:
+                merged[vid] = data
+
+    candidates = list(merged.values())
+    if exclude:
+        candidates = filter_excluded(candidates, exclude)
+    return candidates
+
+
+def cached_multi_tag_search(include: list, exclude: list) -> list:
+    key = (tuple(sorted(include)), tuple(sorted(exclude)))
+    now = time.time()
+    with _multi_tag_cache_lock:
+        entry = _multi_tag_cache.get(key)
+        if entry and now - entry[0] < MULTI_TAG_CACHE_TTL:
+            return entry[1]
+
+    result = multi_tag_search(include, exclude)
+
+    with _multi_tag_cache_lock:
+        _multi_tag_cache[key] = (now, result)
+        if len(_multi_tag_cache) > 100:
+            oldest_key = min(_multi_tag_cache, key=lambda k: _multi_tag_cache[k][0])
+            del _multi_tag_cache[oldest_key]
+
+    return result
+
+
 @app.route("/")
 def index():
     page = request.args.get("page", "1")
@@ -241,23 +440,35 @@ def index():
     logging.debug(f"[CONFIG] USE_PROXY={USE_PROXY}, DEBUG_MODE={DEBUG_MODE}")
     
     if query:
-        # Handle search functionality
-        logging.debug(f"[SEARCH] Query='{query}', Page={page}")
-        formatted_query = query.replace(" ", "-")
-        search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
-        logging.debug(f"[SEARCH] Search URL: {search_url}")
-        
-        html_text = get_html(search_url)
-        videos = extract_videos(html_text)
-        all_tags = extract_popular_tags(html_text)
-        
+        include, exclude = parse_query(query)
+        logging.debug(f"[SEARCH] include={include} exclude={exclude} page={page}")
+
+        if len(include) <= 1 and not exclude:
+            # Fast path: original free-text/single-tag site search
+            formatted_query = query.replace(" ", "-")
+            search_url = f"{BASE_URL}/search/{formatted_query}?sort_by=post_date;from:{page}"
+            logging.debug(f"[SEARCH] Search URL: {search_url}")
+
+            html_text = get_html(search_url)
+            videos = extract_videos(html_text)
+            all_tags = extract_popular_tags(html_text)
+            index_tags(all_tags)
+        else:
+            # Multi-tag AND search with optional '-tag' exclusion
+            all_candidates = cached_multi_tag_search(include, exclude)
+            page_size = 24
+            start = (int(page) - 1) * page_size
+            videos = all_candidates[start:start + page_size]
+            all_tags = include
+
         logging.debug(f"[SEARCH] Query='{query}', Page={page} → {len(videos)} videos, {len(all_tags)} tags")
     else:
         # Handle normal home page
         html_text = get_html(f"{BASE_URL}/latest-updates/{page}/")
         all_tags = extract_popular_tags(html_text)
         videos = extract_videos(html_text)
-        
+        index_tags(all_tags)
+
         logging.debug(f"[INDEX] Found {len(videos)} videos, {len(all_tags)} tags")
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -345,6 +556,14 @@ def stream():
     except Exception as e:
         logging.error(f"[STREAM] Stream failed: {e}")
         return f"Stream failed: {e}", 500
+
+
+@app.route("/api/tags/suggest")
+def tags_suggest():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+    return jsonify(suggest_tags(q))
 
 
 @app.route("/health")
