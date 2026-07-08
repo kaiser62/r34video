@@ -189,8 +189,18 @@ def extract_tags_from_video_html(page_html: str) -> list[str]:
 @lru_cache(maxsize=32)
 def extract_popular_tags(html_text: str) -> list[str]:
     soup = BeautifulSoup(html_text, "html.parser")
-    tag_elements = soup.select(".categories a") or soup.select(".tags a") or soup.select(".list a")
-    return sorted({a.get_text(strip=True) for a in tag_elements if a.get_text(strip=True)})
+    tags = set()
+    for a in soup.select("a.item[href*='/categories/']"):
+        name_el = a.select_one(".name")
+        if not name_el:
+            continue
+        count_el = name_el.select_one(".count")
+        if count_el:
+            count_el.extract()
+        text = name_el.get_text(strip=True)
+        if text:
+            tags.add(text)
+    return sorted(tags)
 
 
 def extract_videos(html_text: str) -> list[dict]:
